@@ -27,6 +27,23 @@ def get_data_dir() -> str:
 
 _DATA_DIR = get_data_dir()
 
+def _get_bundle_dir() -> str:
+    """バンドル内の読み取り専用アセットのディレクトリを返す。"""
+    if getattr(sys, 'frozen', False):
+        return sys._MEIPASS
+    return os.path.dirname(os.path.abspath(__file__))
+
+def _seed_master_files():
+    """初回起動時のみ、バンドル内のマスタCSVをデータディレクトリにコピーする。"""
+    seed_dir = os.path.join(_get_bundle_dir(), 'seed')
+    for fname in ('satohuru_masta.csv', 'sincho.csv'):
+        dest = os.path.join(_DATA_DIR, fname)
+        src  = os.path.join(seed_dir, fname)
+        if not os.path.exists(dest) and os.path.exists(src):
+            shutil.copy2(src, dest)
+
+_seed_master_files()
+
 DB_FILE           = os.path.join(_DATA_DIR, "local_database.db")
 MASTER_FILE       = os.path.join(_DATA_DIR, "master.xlsx")
 SYNC_DIR          = os.path.join(_DATA_DIR, "synced_excel")

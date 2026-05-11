@@ -10,6 +10,8 @@ a = Analysis(
     datas=[
         (_eel_js, 'eel'),
         ('frontend/out', 'frontend/out'),
+        ('satohuru_masta.csv', 'seed'),
+        ('sincho.csv', 'seed'),
     ],
     hiddenimports=['bottle_websocket'],
     hookspath=[],

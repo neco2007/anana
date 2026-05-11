@@ -9,9 +9,7 @@ __pycache__/
 *.pyo
 upload/
 local_database.db
-*.xlsx
-satohuru_masta.csv
-sincho.csv
+master.xlsx
 
 # Node.js / Next.js
 frontend/node_modules/
