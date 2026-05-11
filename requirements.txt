@@ -1,0 +1,6 @@
+eel
+bcrypt
+pandas
+openpyxl
+chardet
+python-dotenv

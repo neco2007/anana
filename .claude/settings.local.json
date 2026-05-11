@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm --version)",
+      "Bash(npm run *)",
+      "PowerShell(Get-ChildItem \"C:\\\\Users\\\\daich\\\\Downloads\\\\order ONE\" | Where-Object { $_.Name -ne \"node_modules\" } | Select-Object Name, LastWriteTime, PSIsContainer)",
+      "PowerShell(Get-ChildItem \"C:\\\\Users\\\\daich\\\\Downloads\\\\order ONE\\\\frontend\\\\src\" -Recurse | Where-Object { -not $_.PSIsContainer } | Select-Object FullName)",
+      "PowerShell(Get-ChildItem \"C:\\\\Users\\\\daich\\\\Downloads\\\\order ONE\\\\frontend\" -Recurse -File | Where-Object { $_.Extension -in \".js\",\".jsx\",\".ts\",\".tsx\" -and $_.FullName -notmatch \"node_modules\" } | Select-Object FullName)",
+      "PowerShell($content = [System.IO.File]::ReadAllText\\(\"C:\\\\Users\\\\daich\\\\Downloads\\\\order ONE\\\\3.さ　取り込みCSV \\(3\\).csv\", [System.Text.Encoding]::GetEncoding\\(\"Shift_JIS\"\\)\\); $content.Split\\(\"`n\"\\)[0])",
+      "Bash(python3 -c ' *)",
+      "Bash(python -c \"import sqlite3; conn=sqlite3.connect\\('local_database.db'\\); conn.row_factory=sqlite3.Row; cur=conn.cursor\\(\\); cur.execute\\(\\\\\"SELECT name FROM sqlite_master WHERE type='table'\\\\\"\\); print\\([r[0] for r in cur.fetchall\\(\\)]\\)\")",
+      "Bash(python -c ' *)",
+      "Bash(python -c \"import sys; data = sys.stdin.read\\(\\); print\\(data[:2000]\\)\")",
+      "Bash(python *)",
+      "Bash(python3 *)"
+    ]
+  }
+}

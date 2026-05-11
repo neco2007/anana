@@ -1,0 +1,4 @@
+Import Error: duplicate column name: 発注商品名
+--- [CHECK] 判定された文字コード: UTF-8-SIG ---
+--- [CHECK] UTF-8へ変換完了 ---
+Import Error: duplicate column name: 発注商品名

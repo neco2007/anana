@@ -1,0 +1,29 @@
+# PyInstaller ビルド成果物
+dist/
+build/
+*.spec.bak
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+upload/
+local_database.db
+*.xlsx
+satohuru_masta.csv
+sincho.csv
+
+# Node.js / Next.js
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+
+# 環境設定
+.env
+.env.local
+*.env
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini

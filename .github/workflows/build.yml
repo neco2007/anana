@@ -1,0 +1,154 @@
+name: Build OrderONE
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  # ─────────────────────────────────────────
+  # 1. Next.js フロントエンドのビルド（共通）
+  # ─────────────────────────────────────────
+  build-frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm install
+
+      - name: Build Next.js (static export)
+        working-directory: frontend
+        run: npm run build
+
+      - name: Upload frontend artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-out
+          path: frontend/out
+
+  # ─────────────────────────────────────────
+  # 2. Mac .app ビルド (Apple Silicon)
+  # ─────────────────────────────────────────
+  build-mac:
+    needs: build-frontend
+    runs-on: macos-latest        # arm64 (Apple Silicon)
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download frontend
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-out
+          path: frontend/out
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Python dependencies
+        run: pip install pyinstaller eel pandas openpyxl bcrypt chardet python-dotenv
+
+      - name: Build Mac .app
+        run: pyinstaller OrderONE_Mac.spec
+
+      - name: Zip Mac .app
+        run: cd dist && zip -r ../OrderONE-Mac-arm64.zip OrderONE.app
+
+      - name: Upload Mac artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: OrderONE-Mac-arm64
+          path: OrderONE-Mac-arm64.zip
+
+  # ─────────────────────────────────────────
+  # 3. Mac .app ビルド (Intel)
+  # ─────────────────────────────────────────
+  build-mac-intel:
+    needs: build-frontend
+    runs-on: macos-13            # x86_64 (Intel)
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download frontend
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-out
+          path: frontend/out
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Python dependencies
+        run: pip install pyinstaller eel pandas openpyxl bcrypt chardet python-dotenv
+
+      - name: Build Mac .app
+        run: pyinstaller OrderONE_Mac.spec
+
+      - name: Zip Mac .app
+        run: cd dist && zip -r ../OrderONE-Mac-x86_64.zip OrderONE.app
+
+      - name: Upload Mac Intel artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: OrderONE-Mac-x86_64
+          path: OrderONE-Mac-x86_64.zip
+
+  # ─────────────────────────────────────────
+  # 4. Windows .exe ビルド
+  # ─────────────────────────────────────────
+  build-windows:
+    needs: build-frontend
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download frontend
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-out
+          path: frontend/out
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Python dependencies
+        run: pip install pyinstaller eel pandas openpyxl bcrypt chardet python-dotenv
+
+      - name: Build Windows exe
+        run: pyinstaller OrderONE_Win.spec
+
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: OrderONE-Windows
+          path: dist/OrderONE.exe
+
+  # ─────────────────────────────────────────
+  # 5. GitHub Release（タグ push 時のみ）
+  # ─────────────────────────────────────────
+  release:
+    needs: [build-mac, build-mac-intel, build-windows]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    permissions:
+      contents: write
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            OrderONE-Mac-arm64/OrderONE-Mac-arm64.zip
+            OrderONE-Mac-x86_64/OrderONE-Mac-x86_64.zip
+            OrderONE-Windows/OrderONE.exe
