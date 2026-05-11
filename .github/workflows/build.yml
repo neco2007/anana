@@ -70,41 +70,7 @@ jobs:
           path: OrderONE-Mac-arm64.zip
 
   # ─────────────────────────────────────────
-  # 3. Mac .app ビルド (Intel)
-  # ─────────────────────────────────────────
-  build-mac-intel:
-    needs: build-frontend
-    runs-on: macos-13            # x86_64 (Intel)
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Download frontend
-        uses: actions/download-artifact@v4
-        with:
-          name: frontend-out
-          path: frontend/out
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-
-      - name: Install Python dependencies
-        run: pip install pyinstaller eel pandas openpyxl bcrypt chardet python-dotenv
-
-      - name: Build Mac .app
-        run: pyinstaller OrderONE_Mac.spec
-
-      - name: Zip Mac .app
-        run: cd dist && zip -r ../OrderONE-Mac-x86_64.zip OrderONE.app
-
-      - name: Upload Mac Intel artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: OrderONE-Mac-x86_64
-          path: OrderONE-Mac-x86_64.zip
-
-  # ─────────────────────────────────────────
-  # 4. Windows .exe ビルド
+  # 3. Windows .exe ビルド
   # ─────────────────────────────────────────
   build-windows:
     needs: build-frontend
@@ -138,7 +104,7 @@ jobs:
   # 5. GitHub Release（タグ push 時のみ）
   # ─────────────────────────────────────────
   release:
-    needs: [build-mac, build-mac-intel, build-windows]
+    needs: [build-mac, build-windows]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/')
     permissions:
@@ -152,5 +118,4 @@ jobs:
         with:
           files: |
             OrderONE-Mac-arm64/OrderONE-Mac-arm64.zip
-            OrderONE-Mac-x86_64/OrderONE-Mac-x86_64.zip
             OrderONE-Windows/OrderONE.exe
