@@ -665,8 +665,10 @@ def get_satohuru_master():
     """CSVから全マスタデータを取得"""
     if not os.path.exists(MASTA_FILE):
         return []
-    # 読み込み時に全データを文字列として扱う
     df = pd.read_csv(MASTA_FILE, dtype=str).fillna("")
+    # 旧列名「お礼ID」を画面表示用の「商品コード」に統一
+    if 'お礼ID' in df.columns and '商品コード' not in df.columns:
+        df = df.rename(columns={'お礼ID': '商品コード'})
     return df.to_dict(orient='records')
 
 def save_satohuru_master(data):
