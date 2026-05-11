@@ -655,8 +655,11 @@ def get_single_table_data(table_id):
             
             # 【変更】rowid as id を追加して、フロントエンドから行を特定可能にする
             df = pd.read_sql_query(f'SELECT rowid as id, * FROM "{table_id}"', conn).fillna("")
-            # 旧インポート時に入った「該当なし」を透過的に空欄へ変換
             df = df.replace("該当なし", "")
+            # 全カラムを文字列に統一してフロントエンドでの型エラーを防ぐ
+            for col in df.columns:
+                if col != 'id':
+                    df[col] = df[col].astype(str).replace('nan', '')
             return {"success": True, "rows": df.to_dict(orient='records')}
     except Exception as e:
         return {"success": False, "error": str(e)}

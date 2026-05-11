@@ -100,9 +100,9 @@ export default function OrderDetailModal({ isOpen, onClose, rowData, tableId, on
           let didPropagate = false;
 
           if (isSincho) {
-            const newCode = (editData['商品コード'] || '').trim();
-            const oldCode = (rowData['商品コード'] || '').trim();
-            const matchValue = (rowData['返礼品'] || '').trim();
+            const newCode = String(editData['商品コード'] ?? '').trim();
+            const oldCode = String(rowData['商品コード'] ?? '').trim();
+            const matchValue = String(rowData['返礼品'] ?? '').trim();
             if (newCode !== oldCode && matchValue && window.eel) {
               didPropagate = true;
               window.eel.propagate_code_update(tableId, '返礼品', matchValue, '商品コード', newCode)(() => {
@@ -110,9 +110,9 @@ export default function OrderDetailModal({ isOpen, onClose, rowData, tableId, on
               });
             }
           } else if (isSatofuru) {
-            const newCode = (editData['お礼品ID'] || '').trim();
-            const oldCode = (rowData['お礼品ID'] || '').trim();
-            const matchValue = (rowData['お礼品名'] || '').trim();
+            const newCode = String(editData['お礼品ID'] ?? '').trim();
+            const oldCode = String(rowData['お礼品ID'] ?? '').trim();
+            const matchValue = String(rowData['お礼品名'] ?? '').trim();
             if (newCode !== oldCode && matchValue && window.eel) {
               didPropagate = true;
               window.eel.propagate_code_update(tableId, 'お礼品名', matchValue, 'お礼品ID', newCode)(() => {
