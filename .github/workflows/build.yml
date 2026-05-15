@@ -79,6 +79,59 @@ jobs:
           codesign --verify --verbose=2 dist/OrderONE.app && \
             echo "signature OK" || echo "signature warning (continuing)"
 
+      - name: Test Run and Capture Screenshot
+        run: |
+          # Chrome の First Run ダイアログを抑制
+          CHROME_DIR="$HOME/Library/Application Support/Google/Chrome"
+          mkdir -p "$CHROME_DIR"
+          touch "$CHROME_DIR/First Run"
+          defaults write com.google.Chrome NoFirstRun -bool YES
+          defaults write com.google.Chrome FirstRunTabsSuppressed -bool YES
+          defaults write com.google.Chrome DefaultBrowserSettingEnabled -bool NO
+
+          chmod +x "dist/OrderONE.app/Contents/MacOS/OrderONE"
+          ./dist/OrderONE.app/Contents/MacOS/OrderONE &
+          APP_PID=$!
+          sleep 10
+
+          # macOS ネットワーク許可ダイアログを自動で Allow クリック
+          osascript <<'APPLESCRIPT' || true
+          tell application "System Events"
+              repeat 6 times
+                  delay 2
+                  repeat with proc in every process
+                      try
+                          repeat with win in every window of proc
+                              try
+                                  if (exists button "Allow" of win) then
+                                      click button "Allow" of win
+                                  end if
+                              end try
+                          end repeat
+                      end try
+                  end repeat
+              end repeat
+          end tell
+          APPLESCRIPT
+
+          sleep 20
+          screencapture startup_screen.png
+
+          if ps -p $APP_PID > /dev/null; then
+            echo "app running OK"
+            kill $APP_PID
+          else
+            echo "app exited unexpectedly"
+            exit 1
+          fi
+
+      - name: Upload Startup Screenshot
+        uses: actions/upload-artifact@v4
+        with:
+          name: Mac-Startup-Screenshot
+          path: startup_screen.png
+          retention-days: 7
+
       - name: Zip Mac .app
         run: cd dist && zip -r ../OrderONE-Mac-arm64.zip OrderONE.app
 
