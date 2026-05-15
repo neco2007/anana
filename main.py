@@ -161,4 +161,14 @@ def clear_notifications():
     return database.clear_notifications()
 
 print("--- [SYSTEM] Server Starting (Dynamic Table Mode) ---")
-eel.start('login/index.html', port=8080)
+eel.start(
+    'login/index.html',
+    port=8080,
+    cmdline_args=[
+        '--no-first-run',
+        '--no-default-browser-check',
+        '--disable-sync',
+        '--disable-infobars',
+        '--disable-features=TranslateUI',
+    ]
+)
