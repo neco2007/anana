@@ -1,204 +1,150 @@
-name: Build OrderONE (Mac DMG + Windows EXE)
+name: Build OrderONE
 on:
   push:
-    branches: ["main"]
+    branches:
+      - development
+    tags:
+      - 'v*'
   workflow_dispatch:
 
 jobs:
+  # ─────────────────────────────────────────
+  # 1. Next.js フロントエンドのビルド（共通）
+  # ─────────────────────────────────────────
+  build-frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
 
-  # ============================================================
-  #  Mac DMG
-  # ============================================================
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm install
+
+      - name: Build Next.js (static export)
+        working-directory: frontend
+        run: npm run build
+
+      - name: Upload frontend artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-out
+          path: frontend/out
+
+  # ─────────────────────────────────────────
+  # 2. Mac .app ビルド (Apple Silicon)
+  # ─────────────────────────────────────────
   build-mac:
+    needs: build-frontend
     runs-on: macos-latest
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - name: Download frontend
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-out
+          path: frontend/out
+
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
 
       - name: Install Python dependencies
         run: |
-          python3 -m pip install --upgrade pip
-          python3 -m pip install "setuptools<70"
-          python3 -m pip install \
-            eel pandas numpy openpyxl bcrypt xlsxwriter pyinstaller rapidfuzz chardet tzdata
+          pip install "setuptools<70"
+          pip install \
+            pyinstaller eel \
+            pandas numpy openpyxl xlsxwriter \
+            bcrypt chardet rapidfuzz tzdata \
+            python-dotenv
 
-      - name: Prepare seed folder
-        run: |
-          mkdir -p seed
-          cp satohuru_masta.csv seed/satohuru_masta.csv
-          cp sincho.csv seed/sincho.csv
-
-      - name: Build Next.js frontend
-        run: |
-          cd frontend
-          npm ci
-          npm run build
-          cd ..
-
-      - name: Verify frontend build output
-        run: |
-          ls frontend/out/login/index.html || (echo "login/index.html not found" && exit 1)
-          echo "--- script src check ---"
-          grep -o 'src="[^"]*"' frontend/out/login/index.html | head -5
-
-      - name: Build Mac .app bundle
-        run: |
-          pyinstaller \
-            --windowed \
-            --onedir \
-            --name "OrderONE_Mac" \
-            --add-data "frontend/out:frontend/out" \
-            --add-data "master.xlsx:." \
-            --add-data "seed:seed" \
-            --hidden-import "check_item" \
-            --hidden-import "database" \
-            main.py
+      - name: Build Mac .app
+        run: pyinstaller OrderONE_Mac.spec
 
       - name: Ad-hoc Code Sign the .app
         run: |
-          find dist/OrderONE_Mac.app -type f \( -name "*.dylib" -o -name "*.so" \) -print0 | \
+          find dist/OrderONE.app -type f \( -name "*.dylib" -o -name "*.so" \) -print0 | \
             while IFS= read -r -d '' f; do
               codesign --force --sign - "$f" 2>/dev/null || true
             done
-          find dist/OrderONE_Mac.app -name "*.framework" -type d | while read fw; do
+          find dist/OrderONE.app -name "*.framework" -type d | while read fw; do
             codesign --force --deep --sign - "$fw" 2>/dev/null || true
           done
-          codesign --force --sign - \
-            "dist/OrderONE_Mac.app/Contents/MacOS/OrderONE_Mac" || true
-          codesign --deep --force --sign - dist/OrderONE_Mac.app
-          codesign --verify --verbose=2 dist/OrderONE_Mac.app && \
+          codesign --force --sign - "dist/OrderONE.app/Contents/MacOS/OrderONE" || true
+          codesign --deep --force --sign - dist/OrderONE.app
+          codesign --verify --verbose=2 dist/OrderONE.app && \
             echo "signature OK" || echo "signature warning (continuing)"
 
-      - name: Test Run and Capture Screenshot
-        run: |
-          CHROME_DIR="$HOME/Library/Application Support/Google/Chrome"
-          mkdir -p "$CHROME_DIR"
-          touch "$CHROME_DIR/First Run"
-          defaults write com.google.Chrome NoFirstRun -bool YES
-          defaults write com.google.Chrome FirstRunTabsSuppressed -bool YES
-          defaults write com.google.Chrome DefaultBrowserSettingEnabled -bool NO
+      - name: Zip Mac .app
+        run: cd dist && zip -r ../OrderONE-Mac-arm64.zip OrderONE.app
 
-          chmod +x "dist/OrderONE_Mac.app/Contents/MacOS/OrderONE_Mac"
-          ./dist/OrderONE_Mac.app/Contents/MacOS/OrderONE_Mac &
-          APP_PID=$!
-          sleep 10
-
-          osascript <<'APPLESCRIPT' || true
-          tell application "System Events"
-              repeat 6 times
-                  delay 2
-                  repeat with proc in every process
-                      try
-                          repeat with win in every window of proc
-                              try
-                                  if (exists button "Allow" of win) then
-                                      click button "Allow" of win
-                                  end if
-                              end try
-                          end repeat
-                      end try
-                  end repeat
-              end repeat
-          end tell
-          APPLESCRIPT
-
-          sleep 20
-          screencapture startup_screen.png
-
-          if ps -p $APP_PID > /dev/null; then
-            echo "app running OK"
-            kill $APP_PID
-          else
-            echo "app exited unexpectedly"
-            exit 1
-          fi
-
-      - name: Upload Startup Screenshot
+      - name: Upload Mac artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Mac-Startup-Screenshot
-          path: startup_screen.png
-          retention-days: 7
+          name: OrderONE-Mac-arm64
+          path: OrderONE-Mac-arm64.zip
 
-      - name: Create DMG from .app
-        run: |
-          hdiutil create \
-            -volname "OrderONE" \
-            -srcfolder "dist/OrderONE_Mac.app" \
-            -ov \
-            -format UDZO \
-            OrderONE_for_miraimoriya2022.dmg
-
-      - name: Upload Mac DMG
-        uses: actions/upload-artifact@v4
-        with:
-          name: OrderONE_Mac_DMG_File
-          path: OrderONE_for_miraimoriya2022.dmg
-
-  # ============================================================
-  #  Windows EXE
-  # ============================================================
+  # ─────────────────────────────────────────
+  # 3. Windows .exe ビルド
+  # ─────────────────────────────────────────
   build-windows:
+    needs: build-frontend
     runs-on: windows-latest
     env:
       PYTHONUTF8: "1"
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - name: Download frontend
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-out
+          path: frontend/out
+
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
 
       - name: Install Python dependencies
         run: |
-          python -m pip install --upgrade pip
-          python -m pip install "setuptools<70"
-          python -m pip install eel pandas numpy openpyxl bcrypt xlsxwriter pyinstaller rapidfuzz chardet tzdata
+          pip install "setuptools<70"
+          pip install `
+            pyinstaller eel `
+            pandas numpy openpyxl xlsxwriter `
+            bcrypt chardet rapidfuzz tzdata `
+            python-dotenv
         shell: pwsh
 
-      - name: Prepare seed folder
-        run: |
-          New-Item -ItemType Directory -Force -Path seed
-          Copy-Item satohuru_masta.csv seed\satohuru_masta.csv
-          Copy-Item sincho.csv seed\sincho.csv
+      - name: Build Windows exe
+        run: pyinstaller OrderONE_Win.spec
         shell: pwsh
 
-      - name: Build Next.js frontend
-        run: |
-          cd frontend
-          npm ci
-          npm run build
-          cd ..
-        shell: bash
-
-      - name: Build Windows .exe
-        run: |
-          pyinstaller `
-            --onedir `
-            --windowed `
-            --name "OrderONE_Win" `
-            "--add-data=frontend/out;frontend/out" `
-            "--add-data=master.xlsx;." `
-            "--add-data=seed;seed" `
-            --hidden-import=check_item `
-            --hidden-import=database `
-            main.py
-        shell: pwsh
-
-      - name: Package Windows build as ZIP
-        run: |
-          Compress-Archive -Path dist\OrderONE_Win -DestinationPath OrderONE_Win.zip
-        shell: pwsh
-
-      - name: Upload Windows EXE (ZIP)
+      - name: Upload Windows artifact
         uses: actions/upload-artifact@v4
         with:
-          name: OrderONE_Win_EXE_File
-          path: OrderONE_Win.zip
+          name: OrderONE-Windows
+          path: dist/OrderONE.exe
+
+  # ─────────────────────────────────────────
+  # 4. GitHub Release（タグ push 時のみ）
+  # ─────────────────────────────────────────
+  release:
+    needs: [build-mac, build-windows]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    permissions:
+      contents: write
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            OrderONE-Mac-arm64/OrderONE-Mac-arm64.zip
+            OrderONE-Windows/OrderONE.exe
