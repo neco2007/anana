@@ -353,8 +353,8 @@ export default function DashboardPage() {
         </div>
 
         {/* メインコンテンツ */}
-        <main className="flex-1 min-h-0 overflow-hidden">
-          <div className="mx-auto h-full min-h-0 flex flex-col">
+        <main className={`flex-1 min-h-0 ${activeTab === 'home' ? 'overflow-y-auto' : 'overflow-hidden'}`}>
+          <div className={`mx-auto flex flex-col ${activeTab !== 'home' ? 'h-full min-h-0' : 'px-6 py-4'}`}>
             
 {activeTab === 'home' && (
               <DashboardTab
