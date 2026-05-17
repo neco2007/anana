@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import DataViewContainer from '../layout/DataViewContainer'
 import ActionBar from '../data/ActionBar'
 import OrderTable from '../data/OrderTable'
@@ -21,6 +21,7 @@ export default function SatofuruDataView({ onNotify }: SatofuruDataViewProps) {
 
   const [tableData, setTableData] = useState<any[]>([])
   const [masterProducts, setMasterProducts] = useState<string[]>([])
+  const [masterData, setMasterData] = useState<any[]>([])
 
   // テーブルの列順を保持するステート
   const [columnOrder, setColumnOrder] = useState<string[]>([])
@@ -43,18 +44,31 @@ export default function SatofuruDataView({ onNotify }: SatofuruDataViewProps) {
     loadData();
   }, [loadData]);
 
-  // さとふるマスタの発注商品名リストを取得（重複除去・マスタ順を維持）
+  // さとふるマスタの全行データと発注商品名リストを取得
   useEffect(() => {
     if (window.eel) {
       window.eel.get_satohuru_master()((data: any[]) => {
+        const rawData = data ?? [];
+        setMasterData(rawData);
         const seen = new Set<string>();
-        const names = (data ?? [])
+        const names = rawData
           .map((r: any) => (r['発注商品名'] || '').trim())
-          .filter(name => name && !seen.has(name) && seen.add(name));
+          .filter((name: string) => name && !seen.has(name) && seen.add(name));
         setMasterProducts(names);
       });
     }
   }, []);
+
+  // 日付フィルター適用（_import_at の先頭10文字 YYYY-MM-DD で照合）
+  const displayData = useMemo(() => {
+    if (dateFilter === null) return tableData;
+    const d = new Date();
+    d.setDate(d.getDate() - dateFilter);
+    const targetDate = d.toISOString().split('T')[0];
+    return tableData.filter(row =>
+      String(row['_import_at'] || '').slice(0, 10) === targetDate
+    );
+  }, [tableData, dateFilter]);
 
   const handleImport = () => {
     const expectedLabels = SATOFURU_FIELDS.map(f => f.label);
@@ -73,10 +87,9 @@ export default function SatofuruDataView({ onNotify }: SatofuruDataViewProps) {
 
   const handleExport = () => {
     if (window.eel) {
-      // 画面上で並び替えられた順番と、ビューモード（出力モード）をバックエンドへ送る
       window.eel.export_table_csv(tableId, columnOrder, viewMode)((res: any) => {
         if (res.success) {
-          alert("CSVを出力しました。");
+          alert("Excelを出力しました。");
         } else if (res.error) {
           alert("出力エラー: " + res.error);
         }
@@ -84,11 +97,38 @@ export default function SatofuruDataView({ onNotify }: SatofuruDataViewProps) {
     }
   };
 
+  const handleRowDataUpdate = (rowId: any, field: string, value: any) => {
+    setTableData(prev => prev.map(row =>
+      String(row.id) === String(rowId) ? { ...row, [field]: value } : row
+    ));
+    if (window.eel) {
+      window.eel.update_row_field(tableId, rowId, field, value)((res: any) => {
+        if (!res.success) {
+          console.error("Failed to update row:", res.error);
+        }
+      });
+    }
+  };
+
+  // 複数フィールドの一括更新（伝票表示名選択時など）
+  const handleRowMultiUpdate = (rowId: any, updates: Record<string, any>) => {
+    setTableData(prev => prev.map(row =>
+      String(row.id) === String(rowId) ? { ...row, ...updates } : row
+    ));
+    if (window.eel) {
+      window.eel.update_order_record(tableId, rowId, updates)((res: any) => {
+        if (!res.success) {
+          console.error("Failed to update row:", res.error);
+        }
+      });
+    }
+  };
+
   return (
     <DataViewContainer>
-      <ActionBar 
-        onSearch={setSearchWord} 
-        onCreate={() => setIsEditorOpen(true)} 
+      <ActionBar
+        onSearch={setSearchWord}
+        onCreate={() => setIsEditorOpen(true)}
         onImport={handleImport}
         onExport={handleExport}
         onSummaryClick={() => setViewMode('summary')}
@@ -96,7 +136,7 @@ export default function SatofuruDataView({ onNotify }: SatofuruDataViewProps) {
         onViewChange={(v) => setViewMode(v as any)}
         onDateFilterChange={setDateFilter}
       />
-      
+
       <div className="flex-1 min-h-0 overflow-hidden">
         {viewMode === 'summary' ? (
           <OrderSummaryView
@@ -105,15 +145,22 @@ export default function SatofuruDataView({ onNotify }: SatofuruDataViewProps) {
             tableId={tableId}
             data={tableData}
             masterProducts={masterProducts}
+            draggable
           />
         ) : (
-          <OrderTable 
+          <OrderTable
             type="satofuru"
             viewMode={viewMode}
-            searchTerm={searchWord} 
-            data={tableData}
+            searchTerm={searchWord}
+            data={displayData}
+            masterProducts={masterProducts}
+            masterData={masterData}
+            tableId={tableId}
             onColumnOrderChange={setColumnOrder}
+            onRowDataUpdate={handleRowDataUpdate}
+            onRowMultiUpdate={handleRowMultiUpdate}
             onRowDetail={setDetailRow}
+            onRefresh={loadData}
           />
         )}
       </div>

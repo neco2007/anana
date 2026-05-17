@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import DataViewContainer from '../layout/DataViewContainer'
 import ActionBar from '../data/ActionBar'
 import OrderTable from '../data/OrderTable'
@@ -21,10 +21,11 @@ export default function ShinchoDataView({ onNotify }: ShinchoDataViewProps) {
   
   const [tableData, setTableData] = useState<any[]>([])
   const [masterProducts, setMasterProducts] = useState<string[]>([])
+  const [masterData, setMasterData] = useState<any[]>([])
 
   // テーブルの列順と、変更された行データ（のし・備考など）を保持するステート
   const [columnOrder, setColumnOrder] = useState<string[]>([])
-  
+
   const tableId = "shincho_data";
 
   const loadData = useCallback(() => {
@@ -43,27 +44,26 @@ export default function ShinchoDataView({ onNotify }: ShinchoDataViewProps) {
     loadData();
   }, [loadData]);
 
-  // 新朝マスタの発注商品名リストを取得（重複除去・マスタ順を維持）
+  // 新朝マスタの全行データと発注商品名リストを取得
   useEffect(() => {
     if (window.eel) {
       window.eel.get_sincho_master()((data: any[]) => {
+        const rawData = data ?? [];
+        setMasterData(rawData);
         const seen = new Set<string>();
-        const names = (data ?? [])
+        const names = rawData
           .map((r: any) => (r['発注商品名'] || '').trim())
-          .filter(name => name && !seen.has(name) && seen.add(name));
+          .filter((name: string) => name && !seen.has(name) && seen.add(name));
         setMasterProducts(names);
       });
     }
   }, []);
 
   // 行データの更新（のし・備考の編集をステートに反映し、バックエンドへ即時保存）
-  const handleRowDataUpdate = (rowId: string, field: string, value: any) => {
-    // 画面のステートを更新
-    setTableData(prev => prev.map(row => 
-      row.id === rowId ? { ...row, [field]: value } : row
+  const handleRowDataUpdate = (rowId: any, field: string, value: any) => {
+    setTableData(prev => prev.map(row =>
+      String(row.id) === String(rowId) ? { ...row, [field]: value } : row
     ));
-
-    // バックエンドへ更新を通知
     if (window.eel) {
       window.eel.update_row_field(tableId, rowId, field, value)((res: any) => {
         if (!res.success) {
@@ -72,6 +72,31 @@ export default function ShinchoDataView({ onNotify }: ShinchoDataViewProps) {
       });
     }
   };
+
+  // 複数フィールドの一括更新（伝票表示名選択時など）
+  const handleRowMultiUpdate = (rowId: any, updates: Record<string, any>) => {
+    setTableData(prev => prev.map(row =>
+      String(row.id) === String(rowId) ? { ...row, ...updates } : row
+    ));
+    if (window.eel) {
+      window.eel.update_order_record(tableId, rowId, updates)((res: any) => {
+        if (!res.success) {
+          console.error("Failed to update row:", res.error);
+        }
+      });
+    }
+  };
+
+  // 日付フィルター適用（_import_at の先頭10文字 YYYY-MM-DD で照合）
+  const displayData = useMemo(() => {
+    if (dateFilter === null) return tableData;
+    const d = new Date();
+    d.setDate(d.getDate() - dateFilter);
+    const targetDate = d.toISOString().split('T')[0];
+    return tableData.filter(row =>
+      String(row['_import_at'] || '').slice(0, 10) === targetDate
+    );
+  }, [tableData, dateFilter]);
 
   const handleImport = () => {
     const expectedLabels = SHINCHO_FIELDS.map(f => f.label);
@@ -122,16 +147,22 @@ export default function ShinchoDataView({ onNotify }: ShinchoDataViewProps) {
             tableId={tableId}
             data={tableData}
             masterProducts={masterProducts}
+            draggable
           />
         ) : (
-          <OrderTable 
+          <OrderTable
             type="sincho"
             viewMode={viewMode}
-            searchTerm={searchWord} 
-            data={tableData}
+            searchTerm={searchWord}
+            data={displayData}
+            masterProducts={masterProducts}
+            masterData={masterData}
+            tableId={tableId}
             onColumnOrderChange={setColumnOrder}
             onRowDataUpdate={handleRowDataUpdate}
+            onRowMultiUpdate={handleRowMultiUpdate}
             onRowDetail={setDetailRow}
+            onRefresh={loadData}
           />
         )}
       </div>
