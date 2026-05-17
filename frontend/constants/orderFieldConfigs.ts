@@ -16,6 +16,7 @@ export const SATOFURU_FIELDS: FieldConfig[] = [
   { id: 'postal_code', label: '配送先郵便番号', type: 'text' },
   { id: 'order_no', label: '寄附受付番号', type: 'text' },
   { id: 'original_gift_name', label: 'お礼品名', type: 'text' },
+  { id: 'slip_display_name', label: '伝票表示名', type: 'text' },
   { id: 'product_name', label: '発注商品名', type: 'text', readonly: true },
   { id: 'city', label: '配送先市区町村', type: 'text' },
   { id: 'pref', label: '配送先都道府県', type: 'text' },
@@ -65,8 +66,8 @@ export const SHINCHO_FIELDS: FieldConfig[] = [
   { id: 'client_code', label: 'ご依頼主コード', type: 'text' },
   { id: 'client_name', label: '依頼主名', type: 'text' },
   { id: 'client_kana', label: '依頼主名(カナ)', type: 'text' },
-  { id: 'item_code', label: '商品コード', type: 'select', options: ['Select...'] },
-  { id: 'item_name', label: '商品名称', type: 'select', options: ['Select...'] },
+  { id: 'item_code', label: '商品コード', type: 'text' },
+  { id: 'item_name', label: '商品名称', type: 'text' },
   { id: 'date_fixed_item', label: '★日付指定品', type: 'text' },
   { id: 'order_product_name', label: '発注商品名', type: 'text' },
 ];
