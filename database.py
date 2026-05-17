@@ -62,12 +62,33 @@ def get_connection():
 def select_directory():
     root = tk.Tk()
     root.withdraw()
-    # Mac/Windows両方でダイアログが背面に隠れないようにする設定
     root.attributes('-topmost', True)
     root.lift()
+    root.focus_force()
+    root.update()
     path = filedialog.askdirectory()
     root.destroy()
     return path
+
+
+def _save_excel_yugothic(df, filepath, header=True):
+    """DataFrame を游ゴシック 12pt の Excel ファイルとして保存するヘルパー。"""
+    from openpyxl import Workbook
+    from openpyxl.styles import Font
+    wb = Workbook()
+    ws = wb.active
+    font = Font(name='Yu Gothic', size=12)
+    start_row = 1
+    if header:
+        for col_idx, col_name in enumerate(df.columns, 1):
+            cell = ws.cell(row=1, column=col_idx, value=col_name)
+            cell.font = font
+        start_row = 2
+    for row_idx, row_data in enumerate(df.itertuples(index=False), start_row):
+        for col_idx, value in enumerate(row_data, 1):
+            cell = ws.cell(row=row_idx, column=col_idx, value=value)
+            cell.font = font
+    wb.save(filepath)
 
 # --- フォルダを開く命令 (Mac/Windows対応) ---
 def open_folder(path):
@@ -128,25 +149,24 @@ def export_combined_files(table_ids, target_dir, date_type, s_date, e_date, s_ti
                 df_send.to_csv(csv_file, index=False, encoding='utf-8-sig')
 
                 if mode == "all":
-                    # 詳細エクセル出力
+                    # 詳細エクセル出力（游ゴシック 12pt）
                     excel_detail = os.path.join(output_path, f"{table_id}_送付用詳細.xlsx")
-                    df_send.to_excel(excel_detail, index=False)
+                    _save_excel_yugothic(df_send, excel_detail)
 
-                    # 集計指示書エクセル（計算表）
+                    # 集計指示書エクセル（計算表、游ゴシック 12pt）
                     summary_file = os.path.join(output_path, f"{table_id}_集計指示書.xlsx")
                     agg_df = df.groupby("正規化名")["ケース数"].sum().reset_index()
                     agg_df.columns = ["商品名", "個数"]
-                    
                     output_list = [
                         ["", "", f"{datetime.now().strftime('%Y年%m月%d日')}"],
-                        ["商品名", "", "個数"]
+                        ["商品名", "", "個数"],
                     ]
                     total_val = 0
                     for _, row in agg_df.iterrows():
                         output_list.append([row["商品名"], "", row["個数"]])
                         total_val += int(row["個数"])
                     output_list.append(["", "合計", total_val])
-                    pd.DataFrame(output_list).to_excel(summary_file, index=False, header=False)
+                    _save_excel_yugothic(pd.DataFrame(output_list), summary_file, header=False)
 
         open_folder(output_path)
         return {"success": True, "path": output_path}
@@ -462,6 +482,22 @@ def delete_item_table(t):
     reorganize_item_numbers()
     return True
 
+def delete_rows(table_id, row_ids):
+    """指定されたテーブルから rowid のリストに一致する行を削除する。"""
+    try:
+        if not row_ids:
+            return {"success": True, "deleted": 0}
+        with get_connection() as conn:
+            placeholders = ",".join("?" * len(row_ids))
+            cur = conn.execute(
+                f'DELETE FROM "{table_id}" WHERE rowid IN ({placeholders})',
+                [int(r) for r in row_ids]
+            )
+            conn.commit()
+        return {"success": True, "deleted": cur.rowcount}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
 def update_table_data(t, rows):
     try:
         df = pd.DataFrame(rows).fillna("")
@@ -652,7 +688,14 @@ def get_single_table_data(table_id):
             check = conn.execute(f"SELECT name FROM sqlite_master WHERE type='table' AND name='{table_id}'").fetchone()
             if not check:
                 return {"success": False, "error": "テーブルが存在しません"}
-            
+
+            # さとふるテーブルに「伝票表示名」カラムがなければ追加（既存データの移行対応）
+            if 'satofuru' in table_id:
+                existing_cols = {row[1] for row in conn.execute(f'PRAGMA table_info("{table_id}")')}
+                if '伝票表示名' not in existing_cols:
+                    conn.execute(f'ALTER TABLE "{table_id}" ADD COLUMN "伝票表示名" TEXT DEFAULT ""')
+                    conn.commit()
+
             # 【変更】rowid as id を追加して、フロントエンドから行を特定可能にする
             df = pd.read_sql_query(f'SELECT rowid as id, * FROM "{table_id}"', conn).fillna("")
             df = df.replace("該当なし", "")
@@ -792,12 +835,18 @@ def export_custom_csv(table_id, column_order, view_mode):
             
         df_export = df_export.rename(columns=rename_dict)
 
-        # --- CSV保存 ---
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        filename = f"{table_id}_{view_mode}_export_{timestamp}.csv"
-        filepath = os.path.join(target_dir, filename)
-        
-        df_export.to_csv(filepath, index=False, encoding='utf-8-sig')
+        if 'satofuru' in table_id.lower():
+            # さとふる: YYYY-MM-DD さとふるデータ.xlsx（游ゴシック 12pt）
+            date_str = datetime.now().strftime('%Y-%m-%d')
+            filename = f"{date_str} さとふるデータ.xlsx"
+            filepath = os.path.join(target_dir, filename)
+            _save_excel_yugothic(df_export, filepath)
+        else:
+            # 新朝など: CSV で出力
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            filename = f"{table_id}_{view_mode}_export_{timestamp}.csv"
+            filepath = os.path.join(target_dir, filename)
+            df_export.to_csv(filepath, index=False, encoding='utf-8-sig')
         open_folder(target_dir)
         return {"success": True}
         
@@ -885,7 +934,7 @@ def export_summary_excel_custom(table_id, selected_dates=None):
         wb = Workbook()
         ws = wb.active
 
-        arial12 = Font(name='Arial', size=12)
+        arial12 = Font(name='Yu Gothic', size=12)
         right_align = Alignment(horizontal='right')
         center_align = Alignment(horizontal='center')
 

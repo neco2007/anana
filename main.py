@@ -1,5 +1,15 @@
-import eel, database,check_item, sys, os, tkinter as tk
+import eel, database, check_item, sys, os, tkinter as tk
 from tkinter import filedialog
+
+def _open_file_dialog():
+    """Mac/Windows 共通: ファイルダイアログを確実に最前面に表示するヘルパー"""
+    root = tk.Tk()
+    root.withdraw()
+    root.attributes('-topmost', True)
+    root.lift()
+    root.focus_force()
+    root.update()
+    return root
 
 # --- ビルド後の実行環境（一時フォルダ）のパスを取得するロジック ---
 if getattr(sys, 'frozen', False):
@@ -21,8 +31,9 @@ def login(u, p): return database.authenticate_user(u, p)
 def signup(u, p): return database.register_user(u, p)
 @eel.expose
 def process_and_navigate():
-    root = tk.Tk(); root.withdraw(); root.attributes('-topmost', True)
+    root = _open_file_dialog()
     path = filedialog.askopenfilename(filetypes=[("CSV", "*.csv")])
+    root.destroy()
     return database.save_to_dynamic_item(path) if path else {"success": False}
 @eel.expose
 def fetch_all_tables(): return database.get_all_tables_data()
@@ -67,6 +78,10 @@ def export_files_combined(table_ids, target_dir, date_type, s_date, e_date, s_ti
 
 # main.py の @eel.expose 群の中に追加
 @eel.expose
+def delete_rows(table_id, row_ids):
+    return database.delete_rows(table_id, row_ids)
+
+@eel.expose
 def add_new_order(table_id, row_data):
     return database.insert_single_row(table_id, row_data)
 
@@ -77,11 +92,9 @@ def import_csv_to_table(table_id, expected_labels):
     """
     ファイルダイアログを開き、選択されたCSVを特定のテーブルにインポートする。
     """
-    root = tk.Tk()
-    root.withdraw()
-    root.attributes('-topmost', True)
+    root = _open_file_dialog()
     path = filedialog.askopenfilename(filetypes=[("CSV", "*.csv")])
-    
+    root.destroy()
     if path:
         return database.import_to_specific_table(path, table_id, expected_labels)
     else:
@@ -90,19 +103,9 @@ def import_csv_to_table(table_id, expected_labels):
 @eel.expose
 def export_table_csv(table_id, column_order=[], view_mode="basic"):
     """
-    現在のテーブルデータをCSVとして出力する。
-    画面の並び順とビューモード（basic/all）を考慮する。
+    現在のテーブルデータを出力する（さとふる: Excel、新朝: CSV）。
     """
     return database.export_custom_csv(table_id, column_order, view_mode)
-
-##    target_dir = database.select_directory()
-    if not target_dir:
-        return {"success": False, "error": "保存先が選択されませんでした。"}
-        
-    # 既存のロジックを流用してCSVを出力（全期間・全時刻で指定）
-    return database.export_combined_files(
-        [table_id], target_dir, 'all', '', '', '', '', mode="csv_only"
-    )
     
 # main.py の @eel.expose 群に追加
 @eel.expose
@@ -161,14 +164,4 @@ def clear_notifications():
     return database.clear_notifications()
 
 print("--- [SYSTEM] Server Starting (Dynamic Table Mode) ---")
-eel.start(
-    'login/index.html',
-    port=8080,
-    cmdline_args=[
-        '--no-first-run',
-        '--no-default-browser-check',
-        '--disable-sync',
-        '--disable-infobars',
-        '--disable-features=TranslateUI',
-    ]
-)
+eel.start('login/index.html', port=8080)
