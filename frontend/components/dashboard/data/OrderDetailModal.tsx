@@ -1,12 +1,16 @@
 'use client'
 import React, { useState, useEffect } from 'react'
 import { Pencil, Copy, Trash2, X, Save, Loader2 } from 'lucide-react'
+import SearchableSelect from './SearchableSelect'
 
 const SATOFURU_HIDDEN_FIELDS = new Set([
   '発注商品名１ 連携項目',
   '寄附者住所(都道府県)',
   '寄附者住所２',
   '登録日時',
+]);
+
+const SINCHO_HIDDEN_FIELDS = new Set([
   '伝票表示名',
 ]);
 
@@ -54,39 +58,90 @@ export default function OrderDetailModal({ isOpen, onClose, rowData, tableId, on
     }
   }, [isOpen, rowData]);
 
-  if (!isOpen || !rowData) return null;
+  if (!isOpen || !rowData) return null
+
+  const satofuruProductOptions = Array.from(new Set(
+    satofuruMaster.map(r => (r['発注商品名'] || '').trim()).filter(Boolean)
+  ))
+  const sinchoProductOptions = Array.from(new Set(
+    sinchoMaster.map(r => (r['発注商品名'] || '').trim()).filter(Boolean)
+  ))
+  const satofuruCodeOptions = Array.from(new Set(
+    satofuruMaster.map(r => (r['商品コード'] || '').trim()).filter(Boolean)
+  ))
+  const sinchoCodeOptions = Array.from(new Set(
+    sinchoMaster.map(r => (r['商品コード'] || '').trim()).filter(Boolean)
+  ))
+
+  // 発注商品名 → 対応する伝票表示名（お礼品名）のリスト（さとふる）
+  const satofuruProductToSlipNames: Map<string, string[]> = new Map()
+  for (const row of satofuruMaster) {
+    const pn = (row['発注商品名'] || '').trim()
+    const sn = (row['お礼品名'] || '').trim()
+    if (pn && sn) {
+      if (!satofuruProductToSlipNames.has(pn)) satofuruProductToSlipNames.set(pn, [])
+      const arr = satofuruProductToSlipNames.get(pn)!
+      if (!arr.includes(sn)) arr.push(sn)
+    }
+  }
+  const satofuruSlipNameOptions = Array.from(new Set(
+    satofuruMaster.map(r => (r['お礼品名'] || '').trim()).filter(Boolean)
+  ))
 
   const handleChange = (key: string, value: string) => {
-    // さとふるでお礼品IDが変更されたとき、マスタから発注商品名・伝票表示名を自動更新
     if (isSatofuru && key === 'お礼品ID') {
-      const masterEntry = satofuruMaster.find(
-        (row) => String(row['お礼ID']).trim() === value.trim()
-      );
+      const entry = satofuruMaster.find(
+        r => (String(r['お礼ID'] || r['商品コード'] || '')).trim() === value.trim()
+      )
       setEditData((prev: any) => ({
         ...prev,
         [key]: value,
-        ...(masterEntry
-          ? {
-              '発注商品名': masterEntry['発注商品名'] ?? prev['発注商品名'],
-              '伝票表示名': masterEntry['お礼品名'] ?? prev['伝票表示名'],
-            }
-          : {}),
-      }));
+        ...(entry ? {
+          '発注商品名': entry['発注商品名'] ?? prev['発注商品名'],
+          '伝票表示名': entry['お礼品名'] ?? prev['伝票表示名'],
+        } : {}),
+      }))
+    } else if (isSatofuru && key === '発注商品名') {
+      const entry = satofuruMaster.find(r => (r['発注商品名'] || '').trim() === value.trim())
+      setEditData((prev: any) => ({
+        ...prev,
+        '発注商品名': value,
+        ...(entry ? {
+          'お礼品ID': String(entry['商品コード'] || entry['お礼ID'] || ''),
+          'お礼品名': entry['お礼品名'] ?? prev['お礼品名'],
+          '伝票表示名': entry['お礼品名'] ?? prev['伝票表示名'],
+        } : {}),
+      }))
+    } else if (isSatofuru && key === '伝票表示名') {
+      // 伝票表示名選択 → マスタからお礼品IDを自動更新
+      const entry = satofuruMaster.find(r => (r['お礼品名'] || '').trim() === value.trim())
+      setEditData((prev: any) => ({
+        ...prev,
+        '伝票表示名': value,
+        ...(entry ? {
+          'お礼品ID': String(entry['商品コード'] || entry['お礼ID'] || '') || prev['お礼品ID'],
+          '発注商品名': entry['発注商品名'] ?? prev['発注商品名'],
+        } : {}),
+      }))
     } else if (isSincho && key === '商品コード') {
-      const masterEntry = sinchoMaster.find(
-        (row) => String(row['商品コード']).trim() === value.trim()
-      );
+      const entry = sinchoMaster.find(r => String(r['商品コード']).trim() === value.trim())
       setEditData((prev: any) => ({
         ...prev,
         [key]: value,
-        ...(masterEntry
-          ? { '発注商品名': masterEntry['発注商品名'] ?? prev['発注商品名'] }
-          : {}),
-      }));
+        ...(entry ? { '発注商品名': entry['発注商品名'] ?? prev['発注商品名'] } : {}),
+      }))
+    } else if (isSincho && key === '発注商品名') {
+      // 発注商品名プルダウン選択 → 商品コードを自動更新
+      const entry = sinchoMaster.find(r => (r['発注商品名'] || '').trim() === value.trim())
+      setEditData((prev: any) => ({
+        ...prev,
+        '発注商品名': value,
+        ...(entry ? { '商品コード': entry['商品コード'] ?? prev['商品コード'] } : {}),
+      }))
     } else {
-      setEditData((prev: any) => ({ ...prev, [key]: value }));
+      setEditData((prev: any) => ({ ...prev, [key]: value }))
     }
-  };
+  }
 
   const handleSave = () => {
     setIsSubmitting(true);
@@ -132,6 +187,7 @@ export default function OrderDetailModal({ isOpen, onClose, rowData, tableId, on
   const shouldHide = (key: string): boolean => {
     if (key === 'id' || key.startsWith('_')) return true;
     if (isSatofuru && SATOFURU_HIDDEN_FIELDS.has(key)) return true;
+    if (isSincho && SINCHO_HIDDEN_FIELDS.has(key)) return true;
     return false;
   };
 
@@ -193,12 +249,47 @@ export default function OrderDetailModal({ isOpen, onClose, rowData, tableId, on
                   </div>
                   <div className="bg-[#f8f9fa] border-t-0 border border-transparent min-h-[40px] flex">
                     {isEditing ? (
-                      <input
-                        type="text"
-                        value={value as string}
-                        onChange={(e) => handleChange(key, e.target.value)}
-                        className="w-full h-full px-3 py-2 bg-white border border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-500 text-[13px] text-slate-800 transition-all shadow-sm"
-                      />
+                      isSatofuru && key === 'お礼品ID' ? (
+                        <SearchableSelect
+                          options={satofuruCodeOptions}
+                          value={value as string}
+                          onChange={v => handleChange(key, v)}
+                          className="w-full"
+                        />
+                      ) : isSincho && key === '商品コード' ? (
+                        <SearchableSelect
+                          options={sinchoCodeOptions}
+                          value={value as string}
+                          onChange={v => handleChange(key, v)}
+                          className="w-full"
+                        />
+                      ) : key === '発注商品名' && (isSatofuru || isSincho) ? (
+                        <SearchableSelect
+                          options={isSatofuru ? satofuruProductOptions : sinchoProductOptions}
+                          value={value as string}
+                          onChange={v => handleChange(key, v)}
+                          className="w-full"
+                        />
+                      ) : isSatofuru && key === '伝票表示名' ? (
+                        <SearchableSelect
+                          options={(() => {
+                            const pn = (editData['発注商品名'] || '').trim()
+                            return pn
+                              ? (satofuruProductToSlipNames.get(pn) ?? satofuruSlipNameOptions)
+                              : satofuruSlipNameOptions
+                          })()}
+                          value={value as string}
+                          onChange={v => handleChange(key, v)}
+                          className="w-full"
+                        />
+                      ) : (
+                        <input
+                          type="text"
+                          value={value as string}
+                          onChange={e => handleChange(key, e.target.value)}
+                          className="w-full h-full px-3 py-2 bg-white border border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-500 text-[13px] text-slate-800 transition-all shadow-sm"
+                        />
+                      )
                     ) : (
                       <div className="w-full h-full px-3 py-2 text-[13px] text-slate-800 flex items-center break-all">
                         {value ? String(value) : <span className="text-slate-300 italic">空欄</span>}
