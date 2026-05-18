@@ -60,15 +60,30 @@ def get_connection():
 
 # --- フォルダ選択ダイアログ (Mac/Windows対応) ---
 def select_directory():
-    root = tk.Tk()
-    root.withdraw()
-    root.attributes('-topmost', True)
-    root.lift()
-    root.focus_force()
-    root.update()
-    path = filedialog.askdirectory()
-    root.destroy()
-    return path
+    if platform.system() == 'Darwin':
+        script = 'POSIX path of (choose folder with prompt "フォルダを選択してください")'
+        result = subprocess.run(['osascript', '-e', script], capture_output=True, text=True)
+        return result.stdout.strip() if result.returncode == 0 else None
+    else:
+        root = tk.Tk()
+        root.withdraw()
+        root.attributes('-topmost', True)
+        root.lift()
+        root.focus_force()
+        root.update()
+        path = filedialog.askdirectory()
+        root.destroy()
+        return path
+
+
+def _make_filename(table_id, count, suffix, ext):
+    """YYYY.MM.DD（曜）N件　さと/新P {suffix}.{ext} 形式のファイル名を生成する"""
+    weekdays = ['月', '火', '水', '木', '金', '土', '日']
+    now = datetime.now()
+    date_str = now.strftime('%Y.%m.%d') + f'（{weekdays[now.weekday()]}）'
+    prefix = 'さと' if 'satofuru' in table_id.lower() else '新P'
+    base = f"{prefix} {suffix}".rstrip() if suffix else prefix
+    return f"{date_str}{count}件　{base}.{ext}"
 
 
 def _save_excel_yugothic(df, filepath, header=True):
@@ -358,14 +373,17 @@ def save_to_dynamic_item(file_path):
     os.makedirs(UPLOAD_DIR, exist_ok=True)
     dest_path = os.path.join(UPLOAD_DIR, os.path.basename(file_path))
     shutil.copy2(file_path, dest_path)
-    
-    import check
-    check.fix_encoding(dest_path)
-    
+
     import check_item # ← 【重要】新しいSSoTロジックを読み込み
-    
+
     try:
-        df = pd.read_csv(dest_path).fillna("")
+        ext = os.path.splitext(dest_path)[1].lower()
+        if ext in ('.xlsx', '.xls'):
+            df = pd.read_excel(dest_path, sheet_name=0).fillna("")
+        else:
+            import check
+            check.fix_encoding(dest_path)
+            df = pd.read_csv(dest_path).fillna("")
         master_map = load_master_map()
         # ※master_names は check_item 側で処理するため不要になりました
         
@@ -539,17 +557,20 @@ def import_to_specific_table(file_path, table_id, expected_labels):
     dest_path = os.path.join(UPLOAD_DIR, os.path.basename(file_path))
     shutil.copy2(file_path, dest_path)
 
-    import check
-    check.fix_encoding(dest_path)
-    
     try:
-        # 1. 強力なエンコード指定でCSV読み込み
-        try:
-            df = pd.read_csv(dest_path, encoding='utf-8-sig').fillna("")
-        except:
-            # 日本語Windows環境のCSV (Shift-JIS) を想定
-            df = pd.read_csv(dest_path, encoding='cp932').fillna("")
-        
+        ext = os.path.splitext(dest_path)[1].lower()
+        if ext in ('.xlsx', '.xls'):
+            # 1a. Excel読み込み（先頭シート）
+            df = pd.read_excel(dest_path, sheet_name=0).fillna("")
+        else:
+            # 1b. 強力なエンコード指定でCSV読み込み
+            import check
+            check.fix_encoding(dest_path)
+            try:
+                df = pd.read_csv(dest_path, encoding='utf-8-sig').fillna("")
+            except:
+                df = pd.read_csv(dest_path, encoding='cp932').fillna("")
+
         # 2. 列名の文字化けを防ぐため、全角・半角や不要な文字をクリーンアップ
         df.columns = [str(c).strip() for c in df.columns]
 
@@ -836,15 +857,11 @@ def export_custom_csv(table_id, column_order, view_mode):
         df_export = df_export.rename(columns=rename_dict)
 
         if 'satofuru' in table_id.lower():
-            # さとふる: YYYY-MM-DD さとふるデータ.xlsx（游ゴシック 12pt）
-            date_str = datetime.now().strftime('%Y-%m-%d')
-            filename = f"{date_str} さとふるデータ.xlsx"
+            filename = _make_filename(table_id, len(df_export), '', 'xlsx')
             filepath = os.path.join(target_dir, filename)
             _save_excel_yugothic(df_export, filepath)
         else:
-            # 新朝など: CSV で出力
-            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            filename = f"{table_id}_{view_mode}_export_{timestamp}.csv"
+            filename = _make_filename(table_id, len(df_export), 'CSV', 'csv')
             filepath = os.path.join(target_dir, filename)
             df_export.to_csv(filepath, index=False, encoding='utf-8-sig')
         open_folder(target_dir)
@@ -981,8 +998,8 @@ def export_summary_excel_custom(table_id, selected_dates=None):
             col_letter = ws.cell(row=1, column=col_start + i).column_letter
             ws.column_dimensions[col_letter].width = 14
 
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        filename = f"{table_id}_集計_{timestamp}.xlsx"
+        total_cases = int(pivot.values.sum())
+        filename = _make_filename(table_id, total_cases, '集計', 'xlsx')
         filepath = os.path.join(target_dir, filename)
         wb.save(filepath)
         open_folder(target_dir)

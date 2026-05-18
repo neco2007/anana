@@ -1,15 +1,24 @@
-import eel, database, check_item, sys, os, tkinter as tk
+import eel, database, check_item, sys, os, platform, subprocess, tkinter as tk
 from tkinter import filedialog
 
-def _open_file_dialog():
-    """Mac/Windows 共通: ファイルダイアログを確実に最前面に表示するヘルパー"""
-    root = tk.Tk()
-    root.withdraw()
-    root.attributes('-topmost', True)
-    root.lift()
-    root.focus_force()
-    root.update()
-    return root
+_FILE_FILETYPES = [("CSV / Excel", "*.csv *.xlsx *.xls"), ("CSV", "*.csv"), ("Excel", "*.xlsx *.xls")]
+
+def _ask_open_file():
+    """Mac/Windows 共通: ファイル選択ダイアログを開き、選択パスを返す（None = キャンセル）"""
+    if platform.system() == 'Darwin':
+        script = 'POSIX path of (choose file of type {"csv", "xlsx", "xls"} with prompt "ファイルを選択してください")'
+        result = subprocess.run(['osascript', '-e', script], capture_output=True, text=True)
+        return result.stdout.strip() if result.returncode == 0 else None
+    else:
+        root = tk.Tk()
+        root.withdraw()
+        root.attributes('-topmost', True)
+        root.lift()
+        root.focus_force()
+        root.update()
+        path = filedialog.askopenfilename(filetypes=_FILE_FILETYPES)
+        root.destroy()
+        return path if path else None
 
 # --- ビルド後の実行環境（一時フォルダ）のパスを取得するロジック ---
 if getattr(sys, 'frozen', False):
@@ -31,9 +40,7 @@ def login(u, p): return database.authenticate_user(u, p)
 def signup(u, p): return database.register_user(u, p)
 @eel.expose
 def process_and_navigate():
-    root = _open_file_dialog()
-    path = filedialog.askopenfilename(filetypes=[("CSV", "*.csv")])
-    root.destroy()
+    path = _ask_open_file()
     return database.save_to_dynamic_item(path) if path else {"success": False}
 @eel.expose
 def fetch_all_tables(): return database.get_all_tables_data()
@@ -90,11 +97,9 @@ def add_new_order(table_id, row_data):
 @eel.expose
 def import_csv_to_table(table_id, expected_labels):
     """
-    ファイルダイアログを開き、選択されたCSVを特定のテーブルにインポートする。
+    ファイルダイアログを開き、選択されたCSV/Excelを特定のテーブルにインポートする。
     """
-    root = _open_file_dialog()
-    path = filedialog.askopenfilename(filetypes=[("CSV", "*.csv")])
-    root.destroy()
+    path = _ask_open_file()
     if path:
         return database.import_to_specific_table(path, table_id, expected_labels)
     else:
