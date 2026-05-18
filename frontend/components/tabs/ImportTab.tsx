@@ -114,7 +114,7 @@ export default function ImportTab({ eelReady, onComplete }: ImportTabProps) {
           <>
             <Upload size={64} className={`mx-auto mb-6 transition-transform ${eelReady ? 'text-slate-300 group-hover:scale-110' : 'text-slate-200'}`} />
             <p className="text-2xl font-bold text-slate-600">
-              {eelReady ? "CSVを選択して開始" : "システム準備中..."}
+              {eelReady ? "CSV / Excelを選択して開始" : "システム準備中..."}
             </p>
           </>
         )}
