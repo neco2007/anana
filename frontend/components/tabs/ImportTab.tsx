@@ -40,7 +40,7 @@ export default function ImportTab({ eelReady, onComplete }: ImportTabProps) {
         setLoading(false);
         onComplete(); 
       } else {
-        alert("取り込みに失敗しました。ファイル形式を確認してください。");
+        alert(res.error || "取り込みに失敗しました。ファイル形式を確認してください。");
         setLoading(false);
       }
     })
