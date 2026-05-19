@@ -60,7 +60,7 @@ jobs:
             pyinstaller eel \
             pandas numpy openpyxl xlsxwriter \
             bcrypt chardet rapidfuzz tzdata \
-            python-dotenv
+            python-dotenv holidays
 
       - name: Build Mac .app
         run: pyinstaller OrderONE_Mac.spec
@@ -169,7 +169,7 @@ jobs:
             pyinstaller eel `
             pandas numpy openpyxl xlsxwriter `
             bcrypt chardet rapidfuzz tzdata `
-            python-dotenv
+            python-dotenv holidays
         shell: pwsh
 
       - name: Build Windows exe
