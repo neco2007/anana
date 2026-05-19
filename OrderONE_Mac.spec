@@ -1,19 +1,22 @@
 # -*- mode: python ; coding: utf-8 -*-
 import importlib.util, os
+from PyInstaller.utils.hooks import collect_all, collect_submodules
 
 _eel_js = os.path.join(os.path.dirname(importlib.util.find_spec('eel').origin), 'eel.js')
+
+_holidays_datas, _holidays_binaries, _holidays_hiddenimports = collect_all('holidays')
 
 a = Analysis(
     ['main.py'],
     pathex=[],
-    binaries=[],
+    binaries=[] + _holidays_binaries,
     datas=[
         (_eel_js, 'eel'),
         ('frontend/out', 'frontend/out'),
         ('satohuru_masta.csv', 'seed'),
         ('sincho.csv', 'seed'),
-    ],
-    hiddenimports=['bottle_websocket', 'holidays', 'holidays.countries'],
+    ] + _holidays_datas,
+    hiddenimports=['bottle_websocket'] + _holidays_hiddenimports,
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
