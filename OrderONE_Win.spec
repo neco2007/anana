@@ -13,7 +13,7 @@ a = Analysis(
         ('satohuru_masta.csv', 'seed'),
         ('sincho.csv', 'seed'),
     ],
-    hiddenimports=['bottle_websocket'],
+    hiddenimports=['bottle_websocket', 'holidays', 'holidays.countries'],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
