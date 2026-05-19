@@ -2,11 +2,13 @@ import eel, database, check_item, sys, os, platform, subprocess, tkinter as tk
 from tkinter import filedialog
 
 _FILE_FILETYPES = [("CSV / Excel", "*.csv *.xlsx *.xls"), ("CSV", "*.csv"), ("Excel", "*.xlsx *.xls")]
+_ALLOWED_EXTENSIONS = {'.csv', '.xlsx', '.xls'}
 
 def _ask_open_file():
     """Mac/Windows 共通: ファイル選択ダイアログを開き、選択パスを返す（None = キャンセル）"""
     if platform.system() == 'Darwin':
-        script = 'POSIX path of (choose file of type {"csv", "xlsx", "xls"} with prompt "ファイルを選択してください")'
+        # of type フィルタは macOS 15 Sequoia で UTI 非対応のため除去
+        script = 'POSIX path of (choose file with prompt "ファイルを選択してください（CSV / Excel）")'
         result = subprocess.run(['osascript', '-e', script], capture_output=True, text=True)
         return result.stdout.strip() if result.returncode == 0 else None
     else:
@@ -19,6 +21,13 @@ def _ask_open_file():
         path = filedialog.askopenfilename(filetypes=_FILE_FILETYPES)
         root.destroy()
         return path if path else None
+
+def _check_file_ext(path):
+    """選択ファイルの拡張子を検証し、非対応形式なら error dict を返す。問題なければ None。"""
+    ext = os.path.splitext(path)[1].lower()
+    if ext not in _ALLOWED_EXTENSIONS:
+        return {"success": False, "error": "そのデータ形式には対応していません。CSV または Excel ファイルを選択してください。"}
+    return None
 
 # --- ビルド後の実行環境（一時フォルダ）のパスを取得するロジック ---
 if getattr(sys, 'frozen', False):
@@ -41,7 +50,12 @@ def signup(u, p): return database.register_user(u, p)
 @eel.expose
 def process_and_navigate():
     path = _ask_open_file()
-    return database.save_to_dynamic_item(path) if path else {"success": False}
+    if not path:
+        return {"success": False}
+    err = _check_file_ext(path)
+    if err:
+        return err
+    return database.save_to_dynamic_item(path)
 @eel.expose
 def fetch_all_tables(): return database.get_all_tables_data()
 @eel.expose
@@ -100,17 +114,21 @@ def import_csv_to_table(table_id, expected_labels):
     ファイルダイアログを開き、選択されたCSV/Excelを特定のテーブルにインポートする。
     """
     path = _ask_open_file()
-    if path:
-        return database.import_to_specific_table(path, table_id, expected_labels)
-    else:
+    if not path:
         return {"success": False, "error": "ファイルが選択されませんでした。"}
+    err = _check_file_ext(path)
+    if err:
+        return err
+    return database.import_to_specific_table(path, table_id, expected_labels)
 
 @eel.expose
-def export_table_csv(table_id, column_order=[], view_mode="basic"):
+def export_table_csv(table_id, column_order=[], view_mode="basic", date_mode="today", custom_date=None):
     """
     現在のテーブルデータを出力する（さとふる: Excel、新朝: CSV）。
+    date_mode: 'today' | 'next_day' | 'next_weekday' | 'custom'
+    custom_date: 'YYYY-MM-DD' (date_mode=='custom' のときのみ有効)
     """
-    return database.export_custom_csv(table_id, column_order, view_mode)
+    return database.export_custom_csv(table_id, column_order, view_mode, date_mode, custom_date)
     
 # main.py の @eel.expose 群に追加
 @eel.expose

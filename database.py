@@ -6,7 +6,8 @@ import shutil
 import hashlib
 import bcrypt
 import re
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date as date_type
+import holidays as jp_holidays_lib
 import check_item
 import platform
 import subprocess
@@ -76,11 +77,39 @@ def select_directory():
         return path
 
 
-def _make_filename(table_id, count, suffix, ext):
+def _calc_output_date(mode: str, custom_date: str | None = None) -> date_type:
+    """
+    出力日付モードに応じて使用する日付を返す。
+    mode: 'today' | 'today_weekday' | 'next_day' | 'next_weekday' | 'custom'
+    custom_date: 'YYYY-MM-DD' 文字列（mode=='custom' のときのみ使用）
+    """
+    today = datetime.now().date()
+    jp = jp_holidays_lib.Japan()
+    if mode == 'today_weekday':
+        d = today
+        while d.weekday() >= 5 or d in jp:  # 今日が土日祝なら翌営業日へ
+            d += timedelta(days=1)
+        return d
+    if mode == 'next_day':
+        return today + timedelta(days=1)
+    if mode == 'next_weekday':
+        d = today + timedelta(days=1)
+        while d.weekday() >= 5 or d in jp:
+            d += timedelta(days=1)
+        return d
+    if mode == 'custom' and custom_date:
+        try:
+            return datetime.strptime(custom_date, '%Y-%m-%d').date()
+        except ValueError:
+            pass
+    return today  # 'today' またはフォールバック
+
+
+def _make_filename(table_id, count, suffix, ext, output_date=None):
     """YYYY.MM.DD（曜）N件　さと/新P {suffix}.{ext} 形式のファイル名を生成する"""
     weekdays = ['月', '火', '水', '木', '金', '土', '日']
-    now = datetime.now()
-    date_str = now.strftime('%Y.%m.%d') + f'（{weekdays[now.weekday()]}）'
+    d = output_date if output_date else datetime.now().date()
+    date_str = d.strftime('%Y.%m.%d') + f'（{weekdays[d.weekday()]}）'
     prefix = 'さと' if 'satofuru' in table_id.lower() else '新P'
     base = f"{prefix} {suffix}".rstrip() if suffix else prefix
     return f"{date_str}{count}件　{base}.{ext}"
@@ -254,10 +283,16 @@ def init_db():
         """)
         conn.commit()
 
+def _delete_old_notifications(conn):
+    """24時間より古い通知を削除する。"""
+    conn.execute("DELETE FROM notifications WHERE created_at < datetime('now', '-1 day', 'localtime')")
+    conn.commit()
+
 def get_notifications():
     init_db()
     try:
         with get_connection() as conn:
+            _delete_old_notifications(conn)
             rows = conn.execute("SELECT id, message, time FROM notifications ORDER BY id DESC").fetchall()
             return [{"id": r["id"], "message": r["message"], "time": r["time"], "read": True} for r in rows]
     except Exception as e:
@@ -267,6 +302,7 @@ def add_notification(message, time):
     init_db()
     try:
         with get_connection() as conn:
+            _delete_old_notifications(conn)
             cur = conn.execute("INSERT INTO notifications (message, time) VALUES (?, ?)", (message, time))
             conn.commit()
             return {"success": True, "id": cur.lastrowid}
@@ -805,9 +841,11 @@ def update_row_field(table_id, row_id, field, value):
     except Exception as e:
         return {"success": False, "error": str(e)}
 
-def export_custom_csv(table_id, column_order, view_mode):
+def export_custom_csv(table_id, column_order, view_mode, date_mode="today", custom_date=None):
     """
-    フロントエンドで指定された列の順番・モードに合わせてCSVを出力する
+    フロントエンドで指定された列の順番・モードに合わせてCSVを出力する。
+    date_mode: 'today' | 'next_day' | 'next_weekday' | 'custom'
+    custom_date: 'YYYY-MM-DD' (date_mode=='custom' のときのみ使用)
     """
     target_dir = select_directory()
     if not target_dir:
@@ -856,20 +894,22 @@ def export_custom_csv(table_id, column_order, view_mode):
             
         df_export = df_export.rename(columns=rename_dict)
 
+        output_date = _calc_output_date(date_mode, custom_date)
+
         if 'satofuru' in table_id.lower():
-            filename = _make_filename(table_id, len(df_export), '', 'xlsx')
+            filename = _make_filename(table_id, len(df_export), '', 'xlsx', output_date)
             filepath = os.path.join(target_dir, filename)
             _save_excel_yugothic(df_export, filepath)
         else:
-            filename = _make_filename(table_id, len(df_export), 'CSV', 'csv')
+            filename = _make_filename(table_id, len(df_export), 'CSV', 'csv', output_date)
             filepath = os.path.join(target_dir, filename)
             df_export.to_csv(filepath, index=False, encoding='utf-8-sig')
         open_folder(target_dir)
         return {"success": True}
-        
+
     except Exception as e:
         return {"success": False, "error": str(e)}
-    
+
 def update_order_record(table_id, row_id, updated_data):
     """
     指定されたテーブルの1行(rowid)のデータを丸ごと更新する
