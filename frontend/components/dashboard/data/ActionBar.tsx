@@ -10,6 +10,7 @@ interface ActionBarProps {
   viewMode?: string;
   onViewChange?: (view: string) => void;
   onDateFilterChange?: (days: number | null) => void;
+  onSettingsClick?: () => void;
 }
 
 export default function ActionBar({
@@ -20,7 +21,8 @@ export default function ActionBar({
   onSummaryClick,
   viewMode = 'basic',
   onViewChange,
-  onDateFilterChange
+  onDateFilterChange,
+  onSettingsClick
 }: ActionBarProps) {
   return (
     <div className="flex items-center justify-between px-3 py-1.5 bg-slate-50 border-b border-slate-200 shrink-0">
@@ -104,19 +106,26 @@ export default function ActionBar({
       {/* 右側ボタン群 */}
       <div className="flex items-center gap-1">
         <button
+          onClick={onSettingsClick}
+          className="p-1.5 rounded hover:bg-slate-200 transition-colors text-slate-500 hover:text-slate-700"
+          title="出力日設定"
+        >
+          <Settings size={20} />
+        </button>
+        <button
           onClick={onImport}
           className="flex items-center px-3 py-1 text-[13px] border border-slate-300 rounded bg-white hover:bg-slate-100 shadow-sm transition-colors"
         >
           <Upload size={14} className="mr-1.5 text-slate-500" /> 取込
         </button>
-        <button 
+        <button
           onClick={onExport}
           className="flex items-center px-3 py-1 text-[13px] border border-slate-300 rounded bg-white hover:bg-slate-100 shadow-sm transition-colors"
         >
           <Download size={14} className="mr-1.5 text-slate-500" /> 出力
         </button>
-        <button 
-          onClick={onSummaryClick} // 追加：クリックで集計表示へ
+        <button
+          onClick={onSummaryClick}
           className="flex items-center px-3 py-1 text-[13px] border border-slate-300 rounded bg-white hover:bg-slate-100 shadow-sm transition-colors"
         >
           <BarChart3 size={14} className="mr-1.5 text-slate-500" /> 集計
@@ -129,9 +138,6 @@ export default function ActionBar({
         </button>
         <button className="p-1.5 rounded hover:bg-slate-200 transition-colors text-slate-400 hover:text-slate-600">
           <RefreshCcw size={15} />
-        </button>
-        <button className="p-1.5 rounded hover:bg-slate-200 transition-colors text-slate-400 hover:text-slate-600">
-          <Settings size={15} />
         </button>
       </div>
     </div>

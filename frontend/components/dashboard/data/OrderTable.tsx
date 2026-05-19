@@ -516,7 +516,7 @@ export default function OrderTable({
       {/* 選択中バー */}
       {selectedRows.size > 0 && (
         <div className="flex items-center justify-between px-4 py-1.5 bg-blue-50 border-b border-blue-200 shrink-0">
-          <span className="text-[12px] text-blue-700 font-bold">{selectedRows.size} 件選択中</span>
+          <span className="text-[18px] text-blue-700 font-bold">{selectedRows.size} 件選択中</span>
           <button
             onClick={handleDeleteSelected}
             className="flex items-center gap-1.5 px-3 py-1 text-[12px] bg-rose-600 text-white rounded hover:bg-rose-700 transition-colors font-bold"
