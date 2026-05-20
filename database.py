@@ -288,6 +288,16 @@ def _delete_old_notifications(conn):
     conn.execute("DELETE FROM notifications WHERE created_at < datetime('now', '-1 day', 'localtime')")
     conn.commit()
 
+def _cleanup_old_orders(conn, table_id):
+    """3日より古い受注データを自動削除する（さとふる・新朝共通）。"""
+    try:
+        conn.execute(
+            f'DELETE FROM "{table_id}" WHERE _import_at < datetime(\'now\', \'-3 days\', \'localtime\')'
+        )
+        conn.commit()
+    except Exception:
+        pass
+
 def get_notifications():
     init_db()
     try:
@@ -685,7 +695,8 @@ def import_to_specific_table(file_path, table_id, expected_labels):
                 else:
                     order_name = ''
                     slip_name  = ''
-                order_names.append(order_name)
+                # マスタ未登録の場合はクリーン済み名をフォールバック（集計から消えるのを防ぐ）
+                order_names.append(order_name if order_name else clean_name)
                 slip_names.append(slip_name)
 
                 # 属性判定・管理コードはマスタの発注商品名ベース（未登録時はクリーン済み名）
@@ -717,6 +728,8 @@ def import_to_specific_table(file_path, table_id, expected_labels):
         df = df[[col for col in save_target_cols if col in df.columns]]
 
         # 6. データベースへの保存（既存データに追加）
+        # 重複列が存在する場合は最後の列を優先して除去（SQLite の duplicate column name エラー対策）
+        df = df.loc[:, ~df.columns.duplicated(keep='last')]
         with get_connection() as conn:
             df.to_sql(table_id, conn, if_exists='append', index=False)
             
@@ -746,6 +759,10 @@ def get_single_table_data(table_id):
             if not check:
                 return {"success": False, "error": "テーブルが存在しません"}
 
+            # さとふる・新朝の受注テーブルは3日より古いデータを自動削除
+            if table_id in ('satofuru_data', 'shincho_data'):
+                _cleanup_old_orders(conn, table_id)
+
             # さとふるテーブルに「伝票表示名」カラムがなければ追加（既存データの移行対応）
             if 'satofuru' in table_id:
                 existing_cols = {row[1] for row in conn.execute(f'PRAGMA table_info("{table_id}")')}
@@ -753,8 +770,8 @@ def get_single_table_data(table_id):
                     conn.execute(f'ALTER TABLE "{table_id}" ADD COLUMN "伝票表示名" TEXT DEFAULT ""')
                     conn.commit()
 
-            # 【変更】rowid as id を追加して、フロントエンドから行を特定可能にする
-            df = pd.read_sql_query(f'SELECT rowid as id, * FROM "{table_id}"', conn).fillna("")
+            # _import_at の降順（最新順）で取得し、rowid as id で行特定を可能にする
+            df = pd.read_sql_query(f'SELECT rowid as id, * FROM "{table_id}" ORDER BY _import_at DESC', conn).fillna("")
             df = df.replace("該当なし", "")
             # 全カラムを文字列に統一してフロントエンドでの型エラーを防ぐ
             for col in df.columns:
@@ -937,10 +954,12 @@ def update_order_record(table_id, row_id, updated_data):
         print(f"Update Record Error: {e}")
         return {"success": False, "error": str(e)}
 
-def export_summary_excel_custom(table_id, selected_dates=None):
+def export_summary_excel_custom(table_id, selected_dates=None, date_mode="today", custom_date=None):
     """
-    集計データをExcel（Arial 12pt）で出力する。
+    集計データをExcel（游ゴシック 12pt）で出力する。
     selected_dates: 出力対象の日付リスト（YYYY-MM-DD）。Noneの場合は全日付。
+    date_mode: ファイル名日付モード（today/next_day/next_weekday/custom）
+    custom_date: date_mode=='custom' のときの日付（YYYY-MM-DD）
     """
     try:
         from openpyxl import Workbook
@@ -1039,7 +1058,8 @@ def export_summary_excel_custom(table_id, selected_dates=None):
             ws.column_dimensions[col_letter].width = 14
 
         total_cases = int(pivot.values.sum())
-        filename = _make_filename(table_id, total_cases, '集計', 'xlsx')
+        output_date = _calc_output_date(date_mode, custom_date)
+        filename = _make_filename(table_id, total_cases, '集計', 'xlsx', output_date)
         filepath = os.path.join(target_dir, filename)
         wb.save(filepath)
         open_folder(target_dir)

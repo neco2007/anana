@@ -171,8 +171,8 @@ def propagate_code_update(table_id, match_field, match_value, code_field, new_co
     return database.propagate_code_update(table_id, match_field, match_value, code_field, new_code)
 
 @eel.expose
-def export_summary_excel_custom(table_id, selected_dates=None):
-    return database.export_summary_excel_custom(table_id, selected_dates)
+def export_summary_excel_custom(table_id, selected_dates=None, date_mode="today", custom_date=None):
+    return database.export_summary_excel_custom(table_id, selected_dates, date_mode, custom_date)
 
 @eel.expose
 def get_notifications():
