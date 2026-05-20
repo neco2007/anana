@@ -12,7 +12,7 @@ import {
 } from 'lucide-react'
 
 type FontSize = 'small' | 'medium' | 'large'
-const FONT_SIZE_ZOOM: Record<FontSize, number> = { small: 0.85, medium: 1, large: 1.15 }
+const FONT_SIZE_ZOOM: Record<FontSize, number> = { small: 0.85, medium: 1, large: 1.45 }
 const FONT_SIZE_LABELS: Record<FontSize, string> = { small: '小', medium: '中', large: '大' }
 import DashboardTab from '../components/tabs/DashboardTab'
 import SatofuruDataView from '../components/dashboard/page/SatofuruDataView'
