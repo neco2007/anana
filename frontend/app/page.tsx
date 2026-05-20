@@ -7,8 +7,13 @@ import {
   X,
   Pencil,
   LayoutGrid,
-  Home
+  Home,
+  Type
 } from 'lucide-react'
+
+type FontSize = 'small' | 'medium' | 'large'
+const FONT_SIZE_ZOOM: Record<FontSize, number> = { small: 0.85, medium: 1, large: 1.15 }
+const FONT_SIZE_LABELS: Record<FontSize, string> = { small: '小', medium: '中', large: '大' }
 import DashboardTab from '../components/tabs/DashboardTab'
 import SatofuruDataView from '../components/dashboard/page/SatofuruDataView'
 import ShinchoDataView from '../components/dashboard/page/ShinchoDataView'
@@ -26,6 +31,14 @@ export default function DashboardPage() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false)
 
   const [masterType, setMasterType] = useState<'satofuru' | 'sincho'>('satofuru')
+
+  // 文字サイズ設定
+  const [fontSize, setFontSize] = useState<FontSize>(() => {
+    if (typeof window !== 'undefined') {
+      return (localStorage.getItem('app_font_size') as FontSize) || 'medium'
+    }
+    return 'medium'
+  })
 
   // プロフィールパネル用の状態
   const [isProfileOpen, setIsProfileOpen] = useState(false)
@@ -65,6 +78,15 @@ export default function DashboardPage() {
     home: 'ホーム',
     satofuru_data: 'さとふる受注データ',
     shincho_data: '新朝プレス受注データ'
+  }
+
+  useEffect(() => {
+    document.documentElement.style.zoom = String(FONT_SIZE_ZOOM[fontSize])
+  }, [fontSize])
+
+  const handleFontSizeChange = (size: FontSize) => {
+    setFontSize(size)
+    localStorage.setItem('app_font_size', size)
   }
 
   useEffect(() => {
@@ -338,6 +360,29 @@ export default function DashboardPage() {
                     <p className="text-[10px] font-bold text-slate-400 mt-1 tracking-widest">
                       せっていかんりしゃ
                     </p>
+                  </div>
+                </div>
+
+                {/* 文字サイズ設定 */}
+                <div className="px-4 pb-4 border-t border-slate-100 pt-3">
+                  <p className="text-xs font-bold text-slate-500 mb-2 flex items-center gap-1.5">
+                    <Type size={13} /> 文字サイズ
+                  </p>
+                  <div className="flex gap-2">
+                    {(['small', 'medium', 'large'] as FontSize[]).map(size => (
+                      <button
+                        key={size}
+                        onClick={() => handleFontSizeChange(size)}
+                        className={`flex-1 py-1.5 rounded-lg border font-bold transition-colors ${
+                          fontSize === size
+                            ? 'bg-blue-600 text-white border-blue-600'
+                            : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'
+                        }`}
+                        style={{ fontSize: size === 'small' ? '11px' : size === 'medium' ? '13px' : '15px' }}
+                      >
+                        {FONT_SIZE_LABELS[size]}
+                      </button>
+                    ))}
                   </div>
                 </div>
               </div>
