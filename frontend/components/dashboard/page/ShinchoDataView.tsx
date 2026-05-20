@@ -9,6 +9,16 @@ import OrderSummaryView from '../data/OrderSummaryView'
 import { SHINCHO_FIELDS } from '../../../constants/orderFieldConfigs'
 import OrderDetailModal from '../data/OrderDetailModal'
 
+const WEEKDAYS_JP = ['日', '月', '火', '水', '木', '金', '土']
+function formatDateWithWeekday(dateStr: string): string {
+  if (!dateStr) return ''
+  const parts = dateStr.split('-').map(Number)
+  if (parts.length !== 3 || parts.some(isNaN)) return ''
+  const [y, m, d] = parts
+  const date = new Date(y, m - 1, d)
+  return `${y}年${m}月${d}日（${WEEKDAYS_JP[date.getDay()]}）`
+}
+
 type DateMode = 'today' | 'today_weekday' | 'next_day' | 'next_weekday' | 'custom'
 
 const DATE_MODE_LABELS: Record<DateMode, string> = {
@@ -122,7 +132,8 @@ export default function ShinchoDataView({ onNotify }: ShinchoDataViewProps) {
     if (dateFilter === null) return tableData;
     const d = new Date();
     d.setDate(d.getDate() - dateFilter);
-    const targetDate = d.toISOString().split('T')[0];
+    // toISOString() は UTC を返すため JST 0〜9 時台にズレが生じる → ローカル日付で比較
+    const targetDate = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
     return tableData.filter(row =>
       String(row['_import_at'] || '').slice(0, 10) === targetDate
     );
@@ -226,6 +237,11 @@ export default function ShinchoDataView({ onNotify }: ShinchoDataViewProps) {
                     onChange={(e) => handleCustomDateChange(e.target.value)}
                     className="w-full border border-slate-300 rounded-lg px-3 py-1.5 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-400"
                   />
+                  {customDate && (
+                    <p className="text-[11px] text-blue-600 font-bold mt-1.5 text-center">
+                      {formatDateWithWeekday(customDate)}
+                    </p>
+                  )}
                 </div>
               )}
             </div>
@@ -251,6 +267,9 @@ export default function ShinchoDataView({ onNotify }: ShinchoDataViewProps) {
             data={tableData}
             masterProducts={masterProducts}
             draggable
+            parentDateMode={dateMode}
+            parentCustomDate={customDate || undefined}
+            initialDateFilter={dateFilter}
           />
         ) : (
           <OrderTable
