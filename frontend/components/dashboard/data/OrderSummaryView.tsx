@@ -1,6 +1,6 @@
 'use client'
 import React, { useMemo, useState, useEffect } from 'react'
-import { BarChart3, Download, Printer, ChevronLeft, X, GripVertical } from 'lucide-react'
+import { BarChart3, Download, Printer, ChevronLeft, X, GripVertical, Filter, Settings, Calendar } from 'lucide-react'
 import {
   DndContext,
   closestCenter,
@@ -19,6 +19,17 @@ import {
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 
+type SummaryDateMode = 'today' | 'today_weekday' | 'next_day' | 'next_weekday' | 'custom' | 'same_as_data'
+
+const SUMMARY_DATE_MODE_LABELS: Record<SummaryDateMode, string> = {
+  today:         '本日の日付（土日祝含む）',
+  today_weekday: '本日の日付（土日祝含まない）',
+  next_day:      '翌日の日付（土日祝含む）',
+  next_weekday:  '翌営業日の日付（土日祝含まない）',
+  custom:        'カレンダーで日付を指定',
+  same_as_data:  '受注データと同一の日付',
+}
+
 interface OrderSummaryViewProps {
   onBack: () => void
   title: string
@@ -26,15 +37,30 @@ interface OrderSummaryViewProps {
   data: any[]
   masterProducts?: string[]
   draggable?: boolean
+  parentDateMode?: string
+  parentCustomDate?: string
+  initialDateFilter?: number | null
 }
+
+const WEEKDAYS_JP = ['日', '月', '火', '水', '木', '金', '土']
 
 function formatDateJP(dateStr: string): string {
-  const [y, m, d] = dateStr.split('-')
-  if (!y || !m || !d) return dateStr
-  return `${y}年${m}月${d}日`
+  const parts = dateStr.split('-').map(Number)
+  if (parts.length !== 3 || parts.some(isNaN)) return dateStr
+  const [y, m, d] = parts
+  const date = new Date(y, m - 1, d)
+  return `${y}年${m}月${d}日（${WEEKDAYS_JP[date.getDay()]}）`
 }
 
-// ドラッグ可能な商品行コンポーネント
+function formatDateWithWeekday(dateStr: string): string {
+  if (!dateStr) return ''
+  const parts = dateStr.split('-').map(Number)
+  if (parts.length !== 3 || parts.some(isNaN)) return ''
+  const [y, m, d] = parts
+  const date = new Date(y, m - 1, d)
+  return `${y}年${m}月${d}日（${WEEKDAYS_JP[date.getDay()]}）`
+}
+
 function SortableProductRow({
   product,
   dates,
@@ -91,17 +117,48 @@ function SortableProductRow({
   )
 }
 
-export default function OrderSummaryView({ onBack, title, tableId, data, masterProducts, draggable = false }: OrderSummaryViewProps) {
+export default function OrderSummaryView({
+  onBack, title, tableId, data, masterProducts, draggable = false,
+  parentDateMode = 'today', parentCustomDate = '',
+  initialDateFilter = null,
+}: OrderSummaryViewProps) {
 
   const [showExportDialog, setShowExportDialog] = useState(false)
   const [selectedDates, setSelectedDates] = useState<Set<string>>(new Set())
   const [productOrder, setProductOrder] = useState<string[]>([])
 
+  // 表示フィルター（取込日絞り込み）— 親ビューの日付フィルターを初期値として引き継ぐ
+  const [dateFilter, setDateFilter] = useState<number | null>(initialDateFilter)
+
+  // 集計専用 出力日設定
+  const [showSettings, setShowSettings] = useState(false)
+  const [summaryDateMode, setSummaryDateMode] = useState<SummaryDateMode>(() => {
+    if (typeof window !== 'undefined') {
+      return (localStorage.getItem(`summary_output_date_mode_${tableId}`) as SummaryDateMode) || 'today'
+    }
+    return 'today'
+  })
+  const [summaryCustomDate, setSummaryCustomDate] = useState<string>(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem(`summary_output_custom_date_${tableId}`) || ''
+    }
+    return ''
+  })
+
+  // 表示データをローカル日付でフィルタリング
+  const filteredData = useMemo(() => {
+    if (dateFilter === null) return data
+    const d = new Date()
+    d.setDate(d.getDate() - dateFilter)
+    const targetDate = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+    return data.filter(row => String(row['_import_at'] || '').slice(0, 10) === targetDate)
+  }, [data, dateFilter])
+
   const { dates, pivotData } = useMemo(() => {
     const dateSet = new Set<string>()
     const pivot: { [product: string]: { [date: string]: number } } = {}
 
-    data.forEach(row => {
+    filteredData.forEach(row => {
       const rawDate =
         row['インポート日'] ||
         (row['_import_at'] ? String(row['_import_at']).split(' ')[0] : '') ||
@@ -119,9 +176,8 @@ export default function OrderSummaryView({ onBack, title, tableId, data, masterP
 
     const sortedDates = Array.from(dateSet).sort()
     return { dates: sortedDates, pivotData: pivot }
-  }, [data])
+  }, [filteredData])
 
-  // masterProducts が変わるたびに productOrder を初期化（ただしドラッグ後はユーザー順を維持）
   const baseProducts = useMemo(() => {
     if (masterProducts && masterProducts.length > 0) {
       return masterProducts.filter(p => p.trim() !== '')
@@ -159,6 +215,16 @@ export default function OrderSummaryView({ onBack, title, tableId, data, masterP
     }
   }
 
+  const handleDateModeChange = (mode: SummaryDateMode) => {
+    setSummaryDateMode(mode)
+    localStorage.setItem(`summary_output_date_mode_${tableId}`, mode)
+  }
+
+  const handleCustomDateChange = (val: string) => {
+    setSummaryCustomDate(val)
+    localStorage.setItem(`summary_output_custom_date_${tableId}`, val)
+  }
+
   const openExportDialog = () => {
     setSelectedDates(new Set(dates))
     setShowExportDialog(true)
@@ -177,8 +243,22 @@ export default function OrderSummaryView({ onBack, title, tableId, data, masterP
     if (!window.eel) return
     const selected = dates.filter(d => selectedDates.has(d))
     if (selected.length === 0) { alert('出力する日付を1つ以上選択してください'); return }
+
+    if (summaryDateMode === 'custom' && !summaryCustomDate) {
+      alert('カレンダーで日付を選択してください。')
+      return
+    }
+
+    // same_as_data の場合は受注データビューの設定を使用
+    const effectiveDateMode = summaryDateMode === 'same_as_data'
+      ? (parentDateMode || 'today')
+      : summaryDateMode
+    const effectiveCustomDate = summaryDateMode === 'same_as_data'
+      ? (parentCustomDate || null)
+      : (summaryDateMode === 'custom' ? summaryCustomDate : null)
+
     setShowExportDialog(false)
-    window.eel.export_summary_excel_custom(tableId, selected)((res: any) => {
+    window.eel.export_summary_excel_custom(tableId, selected, effectiveDateMode, effectiveCustomDate)((res: any) => {
       if (!res.success) alert('出力エラー: ' + res.error)
     })
   }
@@ -214,7 +294,6 @@ export default function OrderSummaryView({ onBack, title, tableId, data, masterP
               />
             ))}
           </SortableContext>
-          {/* 総計行 */}
           <tr className="bg-amber-50 border-t-2 border-amber-300 sticky bottom-0 z-10">
             <td className="p-3 text-right font-black text-slate-700 border-r border-slate-300 sticky left-0 z-20 bg-amber-50">
               総計
@@ -280,8 +359,10 @@ export default function OrderSummaryView({ onBack, title, tableId, data, masterP
       )}
 
       {/* ツールバー */}
-      <div className="flex items-center justify-between px-4 py-2 border-b border-slate-200 bg-white shrink-0 shadow-sm">
-        <div className="flex items-center gap-4">
+      <div className="flex items-center justify-between px-4 py-2 border-b border-slate-200 bg-white shrink-0 shadow-sm gap-3">
+
+        {/* 左側 */}
+        <div className="flex items-center gap-3 shrink-0">
           <button
             onClick={onBack}
             className="flex items-center px-3 py-1 text-[12px] border border-slate-300 rounded bg-white hover:bg-slate-50 transition-all font-bold text-slate-600"
@@ -294,18 +375,127 @@ export default function OrderSummaryView({ onBack, title, tableId, data, masterP
           </div>
           {draggable && (
             <span className="text-[11px] text-slate-400 flex items-center gap-1">
-              <GripVertical size={12} /> 行をドラッグで並び替えできます
+              <GripVertical size={12} /> 行をドラッグで並び替え
             </span>
           )}
         </div>
-        <div className="flex items-center gap-2">
+
+        {/* 中央: 取込日フィルター */}
+        <div className="flex items-center border border-slate-300 rounded bg-white shadow-sm overflow-hidden">
+          <div className="p-1.5 border-r border-slate-300 bg-white">
+            <Filter size={13} className="text-slate-500" />
+          </div>
+          <select
+            className="px-2 py-1 text-[12px] bg-white outline-none cursor-pointer hover:bg-slate-50 appearance-none pr-7 relative text-slate-700"
+            value={dateFilter === null ? '' : String(dateFilter)}
+            onChange={(e) => {
+              const val = e.target.value
+              setDateFilter(val === '' ? null : parseInt(val))
+            }}
+            style={{
+              backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' fill=\'none\' viewBox=\'0 0 24 24\' stroke=\'%230079bf\'%3E%3Cpath stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'2\' d=\'M19 9l-7 7-7-7\'/%3E%3C/svg%3E")',
+              backgroundRepeat: 'no-repeat', backgroundPosition: 'right 6px center', backgroundSize: '13px'
+            }}
+          >
+            <option value="">全期間</option>
+            <option value="0">取込分が本日</option>
+            <option value="1">1日前（昨日）の取込</option>
+            <option value="2">2日前（おととい）の取込</option>
+            <option value="3">3日前の取込</option>
+            <option value="4">4日前の取込</option>
+            <option value="5">5日前の取込</option>
+            <option value="6">6日前の取込</option>
+          </select>
+        </div>
+
+        {/* 右側 */}
+        <div className="flex items-center gap-2 shrink-0">
+
+          {/* 出力日設定ギア */}
+          <div className="relative">
+            <button
+              onClick={() => setShowSettings(prev => !prev)}
+              title="集計 出力日設定"
+              className="p-1.5 rounded hover:bg-slate-200 transition-colors text-slate-500 hover:text-slate-700"
+            >
+              <Settings size={18} />
+            </button>
+
+            {showSettings && (
+              <div className="absolute right-0 top-full mt-1 z-50 bg-white border border-slate-200 rounded-xl shadow-2xl w-80 animate-in fade-in slide-in-from-top-2">
+                <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 bg-slate-50 rounded-t-xl">
+                  <span className="font-bold text-sm text-slate-700 flex items-center gap-1.5">
+                    <Calendar size={14} /> 集計 出力日設定
+                  </span>
+                  <button onClick={() => setShowSettings(false)} className="text-slate-400 hover:text-slate-700">
+                    <X size={16} />
+                  </button>
+                </div>
+
+                <div className="p-4 flex flex-col gap-3">
+                  {(Object.keys(SUMMARY_DATE_MODE_LABELS) as SummaryDateMode[]).map((mode) => (
+                    <label key={mode} className="flex items-center gap-2.5 cursor-pointer group">
+                      <input
+                        type="radio"
+                        name={`summary_date_mode_${tableId}`}
+                        value={mode}
+                        checked={summaryDateMode === mode}
+                        onChange={() => handleDateModeChange(mode)}
+                        className="accent-blue-600 w-4 h-4 shrink-0"
+                      />
+                      <span className={`text-sm ${summaryDateMode === mode ? 'text-blue-700 font-bold' : 'text-slate-600'} group-hover:text-slate-900`}>
+                        {SUMMARY_DATE_MODE_LABELS[mode]}
+                      </span>
+                    </label>
+                  ))}
+
+                  {summaryDateMode === 'custom' && (
+                    <div className="mt-1 ml-6">
+                      <input
+                        type="date"
+                        value={summaryCustomDate}
+                        onChange={(e) => handleCustomDateChange(e.target.value)}
+                        className="w-full border border-slate-300 rounded-lg px-3 py-1.5 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-400"
+                      />
+                      {summaryCustomDate && (
+                        <p className="text-[11px] text-blue-600 font-bold mt-1.5 text-center">
+                          {formatDateWithWeekday(summaryCustomDate)}
+                        </p>
+                      )}
+                    </div>
+                  )}
+
+                  {summaryDateMode === 'same_as_data' && (
+                    <p className="ml-6 text-[11px] text-slate-400">
+                      受注データビューで設定中: <span className="font-bold text-slate-600">{parentDateMode}</span>
+                      {parentDateMode === 'custom' && parentCustomDate && (
+                        <span>（{parentCustomDate}）</span>
+                      )}
+                    </p>
+                  )}
+                </div>
+
+                <div className="px-4 pb-4">
+                  <button
+                    onClick={() => setShowSettings(false)}
+                    className="w-full py-1.5 text-sm font-bold bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                  >
+                    設定を保存して閉じる
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
           <button
             onClick={openExportDialog}
             className="flex items-center px-3 py-1 text-[12px] border border-slate-300 rounded bg-white hover:bg-blue-50 text-slate-600 hover:text-blue-600 transition-colors gap-1"
           >
             <Download size={14} /> Excel出力
           </button>
-          <button className="p-2 text-slate-400 hover:text-blue-600 transition-colors"><Printer size={18} /></button>
+          <button className="p-2 text-slate-400 hover:text-blue-600 transition-colors">
+            <Printer size={18} />
+          </button>
         </div>
       </div>
 
