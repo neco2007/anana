@@ -525,7 +525,7 @@ export default function OrderTable({
       <div className="flex-1 overflow-auto border-t border-slate-200">
         {/* 列 DnD コンテキスト */}
         <DndContext sensors={colSensors} collisionDetection={closestCenter} onDragEnd={handleColDragEnd}>
-          <table className="w-full text-[12px] border-collapse min-w-max">
+          <table className="text-[12px] border-collapse min-w-max">
 
             <thead className="sticky top-0 bg-slate-50 border-b-2 border-slate-300 z-10 shadow-sm">
               <SortableContext items={activeColumns.map(c => c.id)} strategy={horizontalListSortingStrategy}>

@@ -53,13 +53,25 @@ export default function SearchableSelect({
   const handleOpen = () => {
     if (disabled) return
     if (!open && usePortal && triggerRef.current) {
-      const rect = triggerRef.current.getBoundingClientRect()
-      const dropdownMaxHeight = 220
+      const rect = triggerRef.current.getBoundingClientRect()  // 視覚座標(visual px)
+      // html に CSS zoom が設定されると position:fixed の座標は zoom-adjusted px になり
+      // 視覚位置 = fixed値 × zoom となるため、visual → fixed への変換は ÷zoom
+      const zoom = parseFloat(document.documentElement.style.zoom || '1') || 1
+      const dropH = 220 * zoom  // ドロップダウンの視覚的な高さ(visual px)
+
+      // 垂直: 下スペース不足なら上に表示(計算はすべて visual px、setDropPos は ÷zoom)
       const spaceBelow = window.innerHeight - rect.bottom
-      const top = spaceBelow < dropdownMaxHeight
-        ? rect.top - dropdownMaxHeight
-        : rect.bottom
-      setDropPos({ top, left: rect.left, width: rect.width })
+      const topFixed = spaceBelow >= dropH
+        ? rect.bottom / zoom
+        : Math.max(0, (rect.top - dropH) / zoom)
+
+      // 水平: 右端はみ出し防止
+      const leftFixed = Math.min(
+        rect.left / zoom,
+        Math.max(0, (window.innerWidth - rect.width) / zoom)
+      )
+
+      setDropPos({ top: topFixed, left: leftFixed, width: rect.width / zoom })
     }
     setOpen(o => !o)
   }
