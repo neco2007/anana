@@ -110,12 +110,12 @@ def _make_filename(table_id, count, suffix, ext, output_date=None):
     weekdays = ['月', '火', '水', '木', '金', '土', '日']
     d = output_date if output_date else datetime.now().date()
     date_str = d.strftime('%Y.%m.%d') + f'（{weekdays[d.weekday()]}）'
-    prefix = 'さと' if 'satofuru' in table_id.lower() else '新P'
+    prefix = 'さとふる' if 'satofuru' in table_id.lower() else '新P'
     base = f"{prefix} {suffix}".rstrip() if suffix else prefix
     return f"{date_str}{count}件　{base}.{ext}"
 
 
-def _save_excel_yugothic(df, filepath, header=True):
+def _save_excel_yugothic(df, filepath, header=True, col_widths=None):
     """DataFrame を游ゴシック 12pt の Excel ファイルとして保存するヘルパー。"""
     from openpyxl import Workbook
     from openpyxl.styles import Font
@@ -132,6 +132,9 @@ def _save_excel_yugothic(df, filepath, header=True):
         for col_idx, value in enumerate(row_data, 1):
             cell = ws.cell(row=row_idx, column=col_idx, value=value)
             cell.font = font
+    if col_widths:
+        for col_letter, width in col_widths.items():
+            ws.column_dimensions[col_letter].width = width
     wb.save(filepath)
 
 # --- フォルダを開く命令 (Mac/Windows対応) ---
@@ -199,7 +202,8 @@ def export_combined_files(table_ids, target_dir, date_type, s_date, e_date, s_ti
 
                     # 集計指示書エクセル（計算表、游ゴシック 12pt）
                     summary_file = os.path.join(output_path, f"{table_id}_集計指示書.xlsx")
-                    agg_df = df.groupby("正規化名")["ケース数"].sum().reset_index()
+                    df_agg = df[df['発注商品名'].astype(str).str.strip() != '']
+                    agg_df = df_agg.groupby("発注商品名")["ケース数"].sum().reset_index()
                     agg_df.columns = ["商品名", "個数"]
                     output_list = [
                         ["", "", f"{datetime.now().strftime('%Y年%m月%d日')}"],
@@ -210,7 +214,7 @@ def export_combined_files(table_ids, target_dir, date_type, s_date, e_date, s_ti
                         output_list.append([row["商品名"], "", row["個数"]])
                         total_val += int(row["個数"])
                     output_list.append(["", "合計", total_val])
-                    _save_excel_yugothic(pd.DataFrame(output_list), summary_file, header=False)
+                    _save_excel_yugothic(pd.DataFrame(output_list), summary_file, header=False, col_widths={'A': 45})
 
         open_folder(output_path)
         return {"success": True, "path": output_path}
@@ -244,7 +248,8 @@ def get_aggregated_data_multi(table_ids, date_type, start_date, end_date, start_
     if not all_dfs: return []
     combined = pd.concat(all_dfs, ignore_index=True)
     if combined.empty: return []
-    final_agg = combined.groupby("正規化名")["ケース数"].sum().reset_index()
+    combined_valid = combined[combined['発注商品名'].astype(str).str.strip() != '']
+    final_agg = combined_valid.groupby("発注商品名")["ケース数"].sum().reset_index()
     final_agg.columns = ["正規化名", "個数"]
     return final_agg.to_dict(orient='records')
 
@@ -289,10 +294,30 @@ def _delete_old_notifications(conn):
     conn.commit()
 
 def _cleanup_old_orders(conn, table_id):
-    """3日より古い受注データを自動削除する（さとふる・新朝共通）。"""
+    """3日より古い受注データを自動削除する（さとふる・新朝共通）。
+    カレンダー日付比較で、今日・昨日・一昨日の3日分を保持し、それ以前を削除する。"""
     try:
         conn.execute(
-            f'DELETE FROM "{table_id}" WHERE _import_at < datetime(\'now\', \'-3 days\', \'localtime\')'
+            f'DELETE FROM "{table_id}" WHERE DATE(_import_at) < DATE(datetime(\'now\', \'localtime\'), \'-2 days\')'
+        )
+        conn.commit()
+    except Exception:
+        pass
+
+def _reset_nonmaster_order_names(conn, table_id):
+    """マスタに存在しない発注商品名を空欄にリセットする。"""
+    try:
+        masta_file = SINCHO_MASTA_FILE if 'shincho' in table_id.lower() else MASTA_FILE
+        if not os.path.exists(masta_file):
+            return
+        df_masta = pd.read_csv(masta_file, dtype=str).fillna("")
+        valid_names = [n.strip() for n in df_masta['発注商品名'].unique() if n.strip()]
+        if not valid_names:
+            return
+        placeholders = ','.join(['?' for _ in valid_names])
+        conn.execute(
+            f'UPDATE "{table_id}" SET "発注商品名" = "" WHERE "発注商品名" != "" AND "発注商品名" NOT IN ({placeholders})',
+            valid_names
         )
         conn.commit()
     except Exception:
@@ -759,9 +784,10 @@ def get_single_table_data(table_id):
             if not check:
                 return {"success": False, "error": "テーブルが存在しません"}
 
-            # さとふる・新朝の受注テーブルは3日より古いデータを自動削除
+            # さとふる・新朝の受注テーブルは3日より古いデータを自動削除 + マスタ外の発注商品名をリセット
             if table_id in ('satofuru_data', 'shincho_data'):
                 _cleanup_old_orders(conn, table_id)
+                _reset_nonmaster_order_names(conn, table_id)
 
             # さとふるテーブルに「伝票表示名」カラムがなければ追加（既存データの移行対応）
             if 'satofuru' in table_id:
@@ -1079,28 +1105,28 @@ def propagate_code_update(table_id, match_field, match_value, code_field, new_co
 
         # マスタから発注商品名を取得
         master_fields = check_item.get_master_fields(new_code, source_type)
-        order_name = master_fields['発注商品名'] if master_fields else ''
-
-        # 派生値の算出
-        normalized_name = order_name
-        case_count = 2 if '【２ケース】' in normalized_name else 1
-        is_gift = 'あり' if '【ギフト】' in normalized_name else 'なし'
-        master_map = load_master_map()
-        mgmt_code = master_map.get(normalized_name, '未登録')
+        order_name = master_fields['発注商品名'] if master_fields else None
 
         with get_connection() as conn:
             col_info = conn.execute(f'PRAGMA table_info("{table_id}")').fetchall()
             existing_cols = {row[1] for row in col_info}
 
-            updates = {code_field: new_code, '発注商品名': order_name}
-            if '正規化名' in existing_cols:
-                updates['正規化名'] = normalized_name
-            if 'ケース数' in existing_cols:
-                updates['ケース数'] = case_count
-            if 'ギフト' in existing_cols:
-                updates['ギフト'] = is_gift
-            if '管理コード' in existing_cols:
-                updates['管理コード'] = mgmt_code
+            updates = {code_field: new_code}
+            if order_name:
+                normalized_name = order_name
+                case_count = 2 if '【２ケース】' in normalized_name else 1
+                is_gift = 'あり' if '【ギフト】' in normalized_name else 'なし'
+                master_map = load_master_map()
+                mgmt_code = master_map.get(normalized_name, '未登録')
+                updates['発注商品名'] = order_name
+                if '正規化名' in existing_cols:
+                    updates['正規化名'] = normalized_name
+                if 'ケース数' in existing_cols:
+                    updates['ケース数'] = case_count
+                if 'ギフト' in existing_cols:
+                    updates['ギフト'] = is_gift
+                if '管理コード' in existing_cols:
+                    updates['管理コード'] = mgmt_code
 
             set_clauses = [f'"{k}" = ?' for k in updates.keys()]
             values = list(updates.values()) + [match_value]
