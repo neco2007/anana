@@ -283,19 +283,15 @@ export default function OrderTable({
     return map
   }, [masterData])
 
-  // 発注商品名の選択肢（マスタ順の 発注商品名 のみ・データ内未登録値も追加）
+  // 発注商品名の選択肢（マスタ由来のみ）
   const productOptions = useMemo(() => {
     const seen = new Set<string>()
     const result: string[] = []
     for (const pn of masterProducts) {
       if (!seen.has(pn)) { seen.add(pn); result.push(pn) }
     }
-    for (const row of data) {
-      const pn = (row['発注商品名'] || '').trim()
-      if (pn && !seen.has(pn)) { seen.add(pn); result.push(pn) }
-    }
     return result
-  }, [masterProducts, data])
+  }, [masterProducts])
 
   // --- 検索フィルタリング ---
   const filteredData = useMemo(() => {

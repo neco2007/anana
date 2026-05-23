@@ -54,7 +54,12 @@ export default function SearchableSelect({
     if (disabled) return
     if (!open && usePortal && triggerRef.current) {
       const rect = triggerRef.current.getBoundingClientRect()
-      setDropPos({ top: rect.bottom, left: rect.left, width: rect.width })
+      const dropdownMaxHeight = 220
+      const spaceBelow = window.innerHeight - rect.bottom
+      const top = spaceBelow < dropdownMaxHeight
+        ? rect.top - dropdownMaxHeight
+        : rect.bottom
+      setDropPos({ top, left: rect.left, width: rect.width })
     }
     setOpen(o => !o)
   }
